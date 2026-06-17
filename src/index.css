@@ -15,6 +15,15 @@
 }
 
 @media print {
+  @page {
+    margin: 0;
+    /* size: 80mm auto; -> Descomentar si es estrictamente necesario, pero margin 0 ayuda a la mayoría */
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: white;
+  }
   body * {
     visibility: hidden;
   }
@@ -26,5 +35,8 @@
     left: 0;
     top: 0;
     width: 100%;
+    max-width: 80mm; /* Forzar el ancho máximo para impresoras de 80mm */
+    margin: 0;
+    padding: 0;
   }
 }
