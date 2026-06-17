@@ -82,7 +82,7 @@ export function UsersView({ users, onAddUser, onDeleteUser }: UsersViewProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col overflow-y-auto md:overflow-hidden pb-[80px] md:pb-0">
       <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-4 shrink-0 transition-colors duration-300" style={editingId ? { backgroundColor: '#FFD700', borderColor: '#B91C1C' } : {}}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2">
@@ -139,7 +139,7 @@ export function UsersView({ users, onAddUser, onDeleteUser }: UsersViewProps) {
         </form>
       </div>
 
-      <div className="flex-1 bg-white rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col min-h-0">
+      <div className="shrink-0 md:flex-1 min-h-[500px] md:min-h-0 bg-white rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col">
         <div className="p-4 border-b-2 border-black bg-slate-50 rounded-t-2xl flex justify-between items-center shrink-0">
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2">
             <Users className="w-5 h-5 text-[#B91C1C]" />

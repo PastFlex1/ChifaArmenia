@@ -104,9 +104,10 @@ export function DishInventoryView({
   );
 
   return (
-    <div className="flex w-full h-full gap-4 overflow-hidden flex-col md:flex-row">
-      <div className="w-full md:w-[450px] flex flex-col gap-4 overflow-hidden shrink-0">
-        <div className="bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] p-6 overflow-y-auto scrollbar-hide">
+    <div className="flex w-full h-full gap-4 overflow-y-auto md:overflow-hidden flex-col md:flex-row pb-[80px] md:pb-0">
+      {/* Form Container */}
+      <div className="w-full md:w-[450px] flex flex-col gap-4 shrink-0">
+        <div className="bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] p-6 md:h-full md:overflow-y-auto scrollbar-hide">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-[#FFD700] rounded-xl border-2 border-black flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
               <ChefHat className="w-5 h-5" />
@@ -238,8 +239,8 @@ export function DishInventoryView({
           </form>
         </div>
       </div>
-
-      <div className="flex-1 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
+      {/* Right List */}
+      <div className="shrink-0 md:flex-1 min-h-[500px] md:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
            <h2 className="font-black uppercase tracking-widest italic shrink-0">Menú / Platillos</h2>
            <div className="relative w-full max-w-md">
