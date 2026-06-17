@@ -17,7 +17,7 @@
 @media print {
   @page {
     margin: 0;
-    /* size: 80mm auto; -> Descomentar si es estrictamente necesario, pero margin 0 ayuda a la mayoría */
+    size: 80mm 297mm;
   }
   body {
     margin: 0;
