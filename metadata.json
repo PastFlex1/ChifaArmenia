@@ -1,0 +1,6 @@
+{
+  "name": "Chifa POS",
+  "description": "Sistema de pedidos y notas de venta para restaurante chifa",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

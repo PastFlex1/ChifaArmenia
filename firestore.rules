@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas simples: Permitimos lectura y escritura a las colecciones necesarias.
+    // Como el login es interno de la app (por cédula), permitimos acceso global por ahora.
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    
+    match /rawMaterials/{materialId} {
+      allow read, write: if true;
+    }
+    
+    match /dishes/{dishId} {
+      allow read, write: if true;
+    }
+    
+    match /drinks/{drinkId} {
+      allow read, write: if true;
+    }
+    
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
