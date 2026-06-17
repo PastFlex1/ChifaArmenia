@@ -4,6 +4,10 @@ import { Order } from '../types';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 
+import Swal from 'sweetalert2';
+import { db } from '../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
 interface Props {
   order: Order;
   onClose: () => void;
@@ -13,31 +17,79 @@ export function ReceiptModal({ order, onClose }: Props) {
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
 
-  const handlePrintCustomer = () => {
+  // Función para guardar el ticket en la nube de Firebase
+  const printViaCloudQueue = async (type: 'customer' | 'kitchen') => {
+    try {
+      await addDoc(collection(db, 'print_jobs'), {
+        order: order,
+        ticketType: type,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      return true;
+    } catch (e) {
+      console.error("Error enviando a cola de impresión:", e);
+      return false;
+    }
+  };
+
+  const handlePrintCustomer = async () => {
     setTicketType('customer');
+    
+    // 1. Enviamos a la nube
+    const success = await printViaCloudQueue('customer');
+    if (success) {
+      Swal.fire('Enviado a Cola', 'Ticket en cola de impresión', 'success');
+      return;
+    }
+    
+    // 2. Fallback: Diálogo del navegador si no hay internet o falla Firebase
     setTimeout(() => {
       window.print();
     }, 100);
   };
 
-  const handlePrintKitchen = () => {
+  const handlePrintKitchen = async () => {
     setTicketType('kitchen');
+    
+    const success = await printViaCloudQueue('kitchen');
+    if (success) {
+      Swal.fire('Enviado a Cola', 'Comanda en cola de impresión de cocina', 'success');
+      return;
+    }
+
     setTimeout(() => {
       window.print();
     }, 100);
   };
 
-  const handlePrintBoth = () => {
+  const handlePrintBoth = async () => {
     setTicketType('customer');
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        setTicketType('kitchen');
+    
+    // Enviamos primero al cliente a la cola
+    const successCustomer = await printViaCloudQueue('customer');
+    
+    setTimeout(async () => {
+      setTicketType('kitchen');
+      // Enviamos luego a cocina a la cola
+      const successKitchen = await printViaCloudQueue('kitchen');
+      
+      if (successCustomer && successKitchen) {
+        Swal.fire('Enviado a Cola', 'Ambos tickets en cola de impresión', 'success');
+      } else {
+        // Fallback total
+        setTicketType('customer');
         setTimeout(() => {
           window.print();
+          setTimeout(() => {
+            setTicketType('kitchen');
+            setTimeout(() => {
+              window.print();
+            }, 100);
+          }, 500);
         }, 100);
-      }, 500);
-    }, 100);
+      }
+    }, 500);
   };
 
   const handleDownloadPDF = async () => {

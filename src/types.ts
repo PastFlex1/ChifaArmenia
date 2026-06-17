@@ -1,4 +1,4 @@
-export type Category = 'Comidas' | 'Bebidas';
+export type Category = 'Comidas' | 'Bebidas' | 'Bebidas Calientes' | 'Bebidas Frías';
 
 export type Role = 'Administrador' | 'Cajero' | 'Mesero';
 

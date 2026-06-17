@@ -11,11 +11,18 @@ export function DrinkInventoryView({
   onAddDrink: (d: Drink) => void,
   onDeleteDrink: (id: string) => void
 }) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    stock: string;
+    unitCost: string;
+    price: string;
+    category: Category;
+  }>({
     name: '',
     stock: '',
     unitCost: '',
-    price: ''
+    price: '',
+    category: 'Bebidas Frías'
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,13 +34,13 @@ export function DrinkInventoryView({
     onAddDrink({
       id: editingId || Date.now().toString(),
       name: formData.name,
-      category: 'Bebidas' as Category,
+      category: formData.category,
       stock: Number(formData.stock),
       unitCost: Number(formData.unitCost),
       price: Number(formData.price)
     });
 
-    setFormData({ name: '', stock: '', unitCost: '', price: '' });
+    setFormData({ name: '', stock: '', unitCost: '', price: '', category: 'Bebidas Frías' });
     setEditingId(null);
   };
 
@@ -43,13 +50,14 @@ export function DrinkInventoryView({
       name: item.name,
       stock: item.stock.toString(),
       unitCost: item.unitCost.toString(),
-      price: item.price.toString()
+      price: item.price.toString(),
+      category: (item.category === 'Bebidas Calientes' || item.category === 'Bebidas Frías') ? item.category : 'Bebidas Frías'
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData({ name: '', stock: '', unitCost: '', price: '' });
+    setFormData({ name: '', stock: '', unitCost: '', price: '', category: 'Bebidas Frías' });
   };
 
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
@@ -81,6 +89,18 @@ export function DrinkInventoryView({
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase placeholder-opacity-50 transition-colors"
               />
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-black uppercase opacity-60">Tipo de Bebida</label>
+              <select 
+                value={formData.category}
+                onChange={e => setFormData({ ...formData, category: e.target.value as Category })}
+                className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors"
+              >
+                <option value="Bebidas Frías">Bebidas Frías</option>
+                <option value="Bebidas Calientes">Bebidas Calientes</option>
+              </select>
             </div>
             
             <div className="flex flex-col gap-1">
@@ -151,7 +171,10 @@ export function DrinkInventoryView({
               {filteredDrinks.map((item) => (
                 <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
                    <div className="flex justify-between items-start">
-                     <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
+                     <div>
+                       <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
+                       <span className="text-[10px] font-bold text-blue-600 uppercase border border-blue-600 px-1 rounded">{item.category}</span>
+                     </div>
                      <div className="flex gap-2 shrink-0 ml-2">
                        <button onClick={() => handleEdit(item)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
                           <Edit2 className="w-4 h-4" />

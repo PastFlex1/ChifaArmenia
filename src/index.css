@@ -17,7 +17,7 @@
 @media print {
   @page {
     margin: 0;
-    size: 80mm 297mm;
+    size: 80mm 297mm; /* Forzar el tamaño de papel a ticket de 80mm */
   }
   body {
     margin: 0;
@@ -27,16 +27,17 @@
   body * {
     visibility: hidden;
   }
-  #printable-receipt, #printable-receipt * {
-    visibility: visible;
-  }
   #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    max-width: 80mm; /* Forzar el ancho máximo para impresoras de 80mm */
-    margin: 0;
-    padding: 0;
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important; /* Ancho exacto de 80mm */
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 10px !important; /* Un poco de margen interno para que las letras no toquen el borde del papel */
+    background: white;
+  }
+  #printable-receipt * {
+    visibility: visible;
   }
 }

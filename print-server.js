@@ -1,0 +1,224 @@
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import net from 'net';
+import fs from 'fs';
+import { exec } from 'child_process';
+import path from 'path';
+
+// CONFIGURACIÓN DE TUS 2 IMPRESORAS
+const PRINTER_IP_KITCHEN = '192.168.100.60';  // Impresora de la Cocina (IP confirmada)
+const CAJA_IS_USB = true; // Cambiar a false si alguna vez la conectan por red
+const PRINTER_SHARED_NAME_CAJA = 'caja'; // Nombre con el que compartirás la impresora USB en Windows
+const PRINTER_IP_CUSTOMER = '192.168.100.X'; // Solo se usa si CAJA_IS_USB es false
+const PRINTER_PORT = 9100;
+
+// Configuración de Firebase (copiada de tu frontend)
+const firebaseConfig = {
+  apiKey: "AIzaSyC3JbrBLOAiX99IGWroPSsCqx9Zj42QQoQ",
+  authDomain: "chifa-52865.firebaseapp.com",
+  projectId: "chifa-52865",
+  storageBucket: "chifa-52865.firebasestorage.app",
+  messagingSenderId: "377719806828",
+  appId: "1:377719806828:web:b3f6d9db02356ff92bf149",
+  measurementId: "G-KP74G1XL2D"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+function formatPrice(p) {
+  return `USD/ ${p.toFixed(2)}`;
+}
+
+function textToBuffer(text) {
+  const cleanText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  return Buffer.from(cleanText + '\n', 'latin1');
+}
+
+// Función principal de impresión
+function printTicket(jobId, order, ticketType) {
+  return new Promise((resolve, reject) => {
+    console.log(`[+] Intentando imprimir trabajo ${jobId} (Tipo: ${ticketType})...`);
+      try {
+        let buffers = [];
+        const writeData = (data) => {
+          if (typeof data === 'string') {
+             buffers.push(Buffer.from(data, 'latin1'));
+          } else {
+             buffers.push(data);
+          }
+        };
+
+        writeData(INIT);
+        
+        if (ticketType === 'customer') {
+          writeData(ALIGN_CENTER);
+          writeData(BOLD_ON);
+          writeData(textToBuffer('CHIFA MEI HUA ARMENIA'));
+          writeData(NORMAL_SIZE);
+          writeData(textToBuffer('ALVAREZ ZAMORA RUTH GARDENIA'));
+          writeData(textToBuffer('RUC: 0923809529001'));
+          writeData(textToBuffer('--------------------------------'));
+          
+          writeData(ALIGN_LEFT);
+          writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString()}`));
+          writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          if (order.tableNumber) {
+             writeData(textToBuffer(`MESA: ${order.tableNumber}`));
+          }
+          
+          writeData(textToBuffer('--------------------------------'));
+          writeData(textToBuffer('CLIENTE: CONSUMIDOR FINAL'));
+          writeData(textToBuffer('RUC/CI: 9999999999999'));
+          writeData(textToBuffer('--------------------------------'));
+          
+          writeData(textToBuffer('CANT   DESCRIPCION       TOTAL'));
+          writeData(textToBuffer('--------------------------------'));
+          
+          order.items.forEach(item => {
+            let name = item.menuItem.name.substring(0, 16).padEnd(16);
+            let qty = item.quantity.toString().padEnd(4);
+            let price = formatPrice(item.quantity * item.menuItem.price).padStart(10);
+            writeData(textToBuffer(`${qty} ${name} ${price}`));
+          });
+          
+          writeData(textToBuffer('--------------------------------'));
+          writeData(ALIGN_RIGHT);
+          writeData(textToBuffer(`SUBTOTAL: ${formatPrice(order.total / 1.15)}`));
+          writeData(textToBuffer(`IVA 15%: ${formatPrice(order.total - (order.total / 1.15))}`));
+          writeData(BOLD_ON);
+          writeData(DOUBLE_HEIGHT);
+          writeData(textToBuffer(`TOTAL: ${formatPrice(order.total)}`));
+          writeData(NORMAL_SIZE);
+          writeData(BOLD_OFF);
+          
+          writeData(ALIGN_CENTER);
+          writeData(textToBuffer('--------------------------------'));
+          writeData(textToBuffer('!GRACIAS POR SU PREFERENCIA!'));
+          
+        } else {
+          writeData(ALIGN_CENTER);
+          writeData(DOUBLE_WIDTH_HEIGHT);
+          writeData(BOLD_ON);
+          writeData(textToBuffer('COMANDA'));
+          writeData(NORMAL_SIZE);
+          
+          if (order.tableNumber) {
+            writeData(DOUBLE_HEIGHT);
+            writeData(textToBuffer(`MESA: ${order.tableNumber}`));
+            writeData(NORMAL_SIZE);
+          }
+          writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          
+          writeData(ALIGN_LEFT);
+          writeData(textToBuffer('--------------------------------'));
+          
+          order.items.forEach(item => {
+            writeData(DOUBLE_HEIGHT);
+            writeData(textToBuffer(`[${item.quantity}] x ${item.menuItem.name}`));
+            writeData(NORMAL_SIZE);
+            writeData(textToBuffer(''));
+          });
+          
+          writeData(ALIGN_CENTER);
+          writeData(textToBuffer('--------------------------------'));
+          writeData(textToBuffer('FIN DE COMANDA'));
+        }
+        
+        writeData('\n\n\n\n');
+        writeData(CUT);
+        
+        const finalBuffer = Buffer.concat(buffers);
+
+        // LOGICA DE IMPRESIÓN (USB COMPARTIDA O RED TCP)
+        if (ticketType === 'customer' && CAJA_IS_USB) {
+           const tempFile = path.join(process.cwd(), `ticket_${jobId}.bin`);
+           fs.writeFileSync(tempFile, finalBuffer);
+           
+           // En Windows, enviar archivo raw a impresora compartida
+           const command = `copy /b "${tempFile}" "\\\\127.0.0.1\\${PRINTER_SHARED_NAME_CAJA}"`;
+           console.log(`[+] Enviando ticket por USB compartido: ${command}`);
+           
+           exec(command, (error) => {
+              try { fs.unlinkSync(tempFile); } catch(e){} // Limpiar archivo temporal
+              
+              if (error) {
+                 reject(new Error(`Error enviando a USB: ¿Compartiste la impresora con el nombre '${PRINTER_SHARED_NAME_CAJA}'?`));
+              } else {
+                 resolve();
+              }
+           });
+           
+        } else {
+           // IMPRESION POR RED IP (COCINA)
+           const TARGET_IP = ticketType === 'kitchen' ? PRINTER_IP_KITCHEN : PRINTER_IP_CUSTOMER;
+           console.log(`[+] Conectando a IP ${TARGET_IP}:${PRINTER_PORT} para ticket de ${ticketType}...`);
+           
+           const client = new net.Socket();
+           client.setTimeout(3000);
+
+           client.on('timeout', () => {
+             client.destroy();
+             reject(new Error(`Timeout de conexión a la impresora ${TARGET_IP}. ¿Está encendida?`));
+           });
+
+           client.on('error', (err) => {
+             client.destroy();
+             reject(err);
+           });
+
+           client.connect(PRINTER_PORT, TARGET_IP, function() {
+             client.write(finalBuffer);
+             client.end();
+             resolve();
+           });
+        }
+        
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+  });
+}
+
+// Iniciar listener de Firebase
+console.log(`========================================`);
+console.log(`☁️ SERVIDOR DE COLA DE IMPRESION INICIADO`);
+console.log(`========================================`);
+console.log(`Conectado a Firebase: ${firebaseConfig.projectId}`);
+console.log(`Impresora Cajera: ${PRINTER_IP_CUSTOMER}:${PRINTER_PORT}`);
+console.log(`Impresora Cocina: ${PRINTER_IP_KITCHEN}:${PRINTER_PORT}`);
+console.log(`Escuchando nuevos tickets en tiempo real...`);
+console.log(`Deje esta ventana negra abierta mientras trabaje.`);
+console.log(`========================================`);
+
+const q = query(collection(db, "print_jobs"), where("status", "==", "pending"));
+
+onSnapshot(q, (snapshot) => {
+  snapshot.docChanges().forEach(async (change) => {
+    if (change.type === "added") {
+      const job = change.doc.data();
+      const jobId = change.doc.id;
+      
+      try {
+        await printTicket(jobId, job.order, job.ticketType);
+        console.log(`[OK] Trabajo ${jobId} impreso con éxito.`);
+        
+        // Actualizar en Firebase para no volver a imprimir
+        await updateDoc(doc(db, "print_jobs", jobId), {
+          status: "printed",
+          printedAt: new Date()
+        });
+      } catch (error) {
+        console.error(`[ERROR] Fallo al imprimir ${jobId}:`, error.message);
+        await updateDoc(doc(db, "print_jobs", jobId), {
+          status: "error",
+          error: error.message
+        });
+      }
+    }
+  });
+}, (error) => {
+  console.error("Error escuchando Firebase:", error);
+});
