@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers } from 'lucide-react';
 import { CATEGORIES } from './data';
 import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
 import { MateriaPrimaView } from './components/MateriaPrimaView';
 import { DrinkInventoryView } from './components/DrinkInventoryView';
 import { DishInventoryView } from './components/DishInventoryView';
+import { ComboInventoryView } from './components/ComboInventoryView';
 import { SalesView } from './components/SalesView';
 import { LoginView } from './components/LoginView';
 import { UsersView } from './components/UsersView';
@@ -20,7 +21,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'ventas' | 'usuarios'>('pos');
+  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'combos' | 'ventas' | 'usuarios'>('pos');
   const [activeCategory, setActiveCategory] = useState<Category | 'Todos'>('Todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -37,10 +38,11 @@ export default function App() {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [drinks, setDrinks] = useState<Drink[]>([]);
+  const [combos, setCombos] = useState<any[]>([]);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
-    let loadedState = { users: false, rm: false, dishes: false, drinks: false, orders: false };
+    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, orders: false };
 
     const checkComplete = () => {
       if (Object.values(loadedState).every(Boolean)) {
@@ -92,12 +94,21 @@ export default function App() {
       if (!loadedState.orders) { loadedState.orders = true; checkComplete(); }
     });
 
+    const unsubCombos = onSnapshot(collection(db, 'combos'), snapshot => {
+      setCombos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+      if (!loadedState.combos) { loadedState.combos = true; checkComplete(); }
+    }, (error) => {
+      console.error("Error fetching combos:", error);
+      if (!loadedState.combos) { loadedState.combos = true; checkComplete(); }
+    });
+
     return () => {
       unsubUsers();
       unsubRM();
       unsubDishes();
       unsubDrinks();
       unsubOrders();
+      unsubCombos();
     };
   }, []);
 
@@ -130,8 +141,38 @@ export default function App() {
       isDrink: true
     }));
 
-    return [...d, ...bev];
-  }, [dishes, drinks, rawMaterials]);
+    const c: MenuItem[] = combos.map(combo => {
+      let comboCost = 0;
+      combo.items.forEach((cItem: any) => {
+        if (cItem.type === 'dish') {
+          const d = dishes.find(dish => dish.id === cItem.itemId);
+          if (d) {
+            d.ingredients.forEach(ing => {
+              const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+              if (rm) {
+                comboCost += ing.quantity * rm.unitCost * cItem.quantity;
+              }
+            });
+          }
+        } else if (cItem.type === 'drink') {
+          const dr = drinks.find(drink => drink.id === cItem.itemId);
+          if (dr) {
+            comboCost += dr.unitCost * cItem.quantity;
+          }
+        }
+      });
+      return {
+        id: combo.id,
+        name: combo.name,
+        category: combo.category,
+        price: combo.price,
+        cost: comboCost,
+        isCombo: true
+      };
+    });
+
+    return [...d, ...bev, ...c];
+  }, [dishes, drinks, rawMaterials, combos]);
 
   // Filter items based on category and search
   const filteredItems = useMemo(() => {
@@ -140,7 +181,7 @@ export default function App() {
       if (activeCategory === 'Todos') {
         matchesCategory = true;
       } else if (activeCategory === 'Comidas') {
-        matchesCategory = !item.isDrink;
+        matchesCategory = !item.isDrink && !item.isCombo;
       } else if (activeCategory === 'Bebidas') {
         matchesCategory = item.isDrink === true;
       } else {
@@ -154,7 +195,37 @@ export default function App() {
   }, [posItems, activeCategory, searchQuery]);
 
   const getMaxAvailable = (menuItem: MenuItem): number => {
-    if (menuItem.isDrink) {
+    if (menuItem.isCombo) {
+      const combo = combos.find(c => c.id === menuItem.id);
+      if (!combo || !combo.items || combo.items.length === 0) return Infinity;
+      
+      let minAvailable = Infinity;
+      combo.items.forEach((cItem: any) => {
+        if (cItem.type === 'drink') {
+          const d = drinks.find(dr => dr.id === cItem.itemId);
+          if (d) {
+             const available = Math.floor(d.stock / cItem.quantity);
+             if (available < minAvailable) minAvailable = available;
+          } else {
+             minAvailable = 0;
+          }
+        } else {
+          const dish = dishes.find(d => d.id === cItem.itemId);
+          if (dish && dish.ingredients) {
+            dish.ingredients.forEach(ing => {
+               const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+               if (rm) {
+                  const available = Math.floor(rm.stock / (ing.quantity * cItem.quantity));
+                  if (available < minAvailable) minAvailable = available;
+               } else {
+                  minAvailable = 0;
+               }
+            });
+          }
+        }
+      });
+      return minAvailable;
+    } else if (menuItem.isDrink) {
       const d = drinks.find(dr => dr.id === menuItem.id);
       return d ? d.stock : 0;
     } else {
@@ -215,6 +286,33 @@ export default function App() {
     }).filter(item => item.quantity > 0));
   };
 
+  const updateQuantityExact = (id: string, newQuantity: number | string) => {
+    setCart((prev) => prev.map((item) => {
+      if (item.id === id) {
+        if (newQuantity === '') return { ...item, quantity: '' as any }; // Permitir borrar temporalmente
+        const numQty = parseFloat(newQuantity as string);
+        if (isNaN(numQty) || numQty < 0) return item;
+        
+        const maxAvailable = getMaxAvailable(item.menuItem);
+        if (numQty > maxAvailable) {
+             Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${item.menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
+             return { ...item, quantity: maxAvailable };
+        }
+        return { ...item, quantity: numQty };
+      }
+      return item;
+    }).filter(item => item.quantity !== 0)); // No eliminar si es string vacio todavia
+  };
+
+  const handleBlurQuantity = (id: string) => {
+     setCart((prev) => prev.filter(item => {
+        if (item.id === id && (item.quantity === '' || item.quantity <= 0)) {
+           return false;
+        }
+        return true;
+     }));
+  };
+
   const clearCart = () => {
     setCart([]);
     setTableNumber('');
@@ -229,11 +327,33 @@ export default function App() {
     setIsCheckingOut(true);
 
     // Deduct stock logically
-    const newRawMaterials = [...rawMaterials];
-    const newDrinks = [...drinks];
+    const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
+    const newDrinks = drinks.map(d => ({ ...d }));
 
     cart.forEach(cartItem => {
-      if (cartItem.menuItem.isDrink) {
+      if (cartItem.menuItem.isCombo) {
+        const combo = combos.find(c => c.id === cartItem.menuItem.id);
+        if (combo) {
+          combo.items.forEach((cItem: any) => {
+            if (cItem.type === 'drink') {
+              const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
+              if (drinkIndex >= 0) {
+                newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity));
+              }
+            } else {
+              const dish = dishes.find(d => d.id === cItem.itemId);
+              if (dish) {
+                 dish.ingredients.forEach(ing => {
+                   const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+                   if (rmIndex >= 0) {
+                     newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity));
+                   }
+                 });
+              }
+            }
+          });
+        }
+      } else if (cartItem.menuItem.isDrink) {
         const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
         if (drinkIndex >= 0) {
           newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - cartItem.quantity);
@@ -314,7 +434,31 @@ export default function App() {
       const updatedDrinks = new Map<string, number>();
 
       order.items.forEach(cartItem => {
-        if (cartItem.menuItem.isDrink) {
+        if (cartItem.menuItem.isCombo) {
+          const combo = combos.find(c => c.id === cartItem.menuItem.id);
+          if (combo) {
+            combo.items.forEach((cItem: any) => {
+              if (cItem.type === 'drink') {
+                const drink = drinks.find(d => d.id === cItem.itemId);
+                if (drink) {
+                   const current = updatedDrinks.get(drink.id) ?? drink.stock;
+                   updatedDrinks.set(drink.id, current + (cItem.quantity * cartItem.quantity));
+                }
+              } else {
+                const dish = dishes.find(d => d.id === cItem.itemId);
+                if (dish) {
+                   dish.ingredients.forEach(ing => {
+                     const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+                     if (rm) {
+                       const current = updatedMaterials.get(rm.id) ?? rm.stock;
+                       updatedMaterials.set(rm.id, current + (ing.quantity * cItem.quantity * cartItem.quantity));
+                     }
+                   });
+                }
+              }
+            });
+          }
+        } else if (cartItem.menuItem.isDrink) {
           const drink = drinks.find(d => d.id === cartItem.menuItem.id);
           if (drink) {
              const current = updatedDrinks.get(drink.id) ?? drink.stock;
@@ -388,11 +532,11 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-2 overflow-y-auto">
+        <nav className="flex-1 bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
           {canView('pos') && (
             <button
               onClick={() => setCurrentView('pos')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
@@ -402,7 +546,7 @@ export default function App() {
           {canView('materia_prima') && (
             <button
               onClick={() => setCurrentView('materia_prima')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
@@ -412,7 +556,7 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('inv_comida')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
@@ -422,20 +566,30 @@ export default function App() {
           {canView('inv_bebidas') && (
             <button
               onClick={() => setCurrentView('inv_bebidas')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
               <Wine className="w-5 h-5" /> Inv. Bebidas
             </button>
           )}
+          {canView('inv_comida') && (
+            <button
+              onClick={() => setCurrentView('combos')}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+                currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              <Layers className="w-5 h-5" /> Combos
+            </button>
+          )}
           
-          <div className="my-2 border-b-2 border-dashed border-slate-200"></div>
+          <div className="my-1 border-b-2 border-dashed border-slate-200"></div>
 
           {canView('ventas') && (
             <button
               onClick={() => setCurrentView('ventas')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
@@ -445,7 +599,7 @@ export default function App() {
           {canView('usuarios') && (
             <button
               onClick={() => setCurrentView('usuarios')}
-              className={`w-full text-left px-4 py-4 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
@@ -589,7 +743,19 @@ export default function App() {
             <MateriaPrimaView 
               rawMaterials={rawMaterials} 
               onAddMaterial={async (m) => await setDoc(doc(db, 'rawMaterials', m.id), m)}
-              onDeleteMaterial={async (id) => await deleteDoc(doc(db, 'rawMaterials', id))}
+              onDeleteMaterial={async (id) => {
+                const usedInDish = dishes.find(d => d.ingredients?.some(ing => ing.rawMaterialId === id));
+                if (usedInDish) {
+                  Swal.fire({
+                    title: 'Acción Bloqueada',
+                    text: `No puedes eliminar esta Materia Prima porque está siendo usada en la receta de "${usedInDish.name}". Elimínala de la receta primero.`,
+                    icon: 'error',
+                    confirmButtonColor: '#B91C1C'
+                  });
+                  return;
+                }
+                await deleteDoc(doc(db, 'rawMaterials', id));
+              }}
             />
           ) : currentView === 'ventas' ? (
             <SalesView 
@@ -624,13 +790,45 @@ export default function App() {
               dishes={dishes}
               rawMaterials={rawMaterials}
               onAddDish={async (d) => await setDoc(doc(db, 'dishes', d.id), d)}
-              onDeleteDish={async (id) => await deleteDoc(doc(db, 'dishes', id))}
+              onDeleteDish={async (id) => {
+                const usedInCombo = combos.find(c => c.items?.some((i: any) => i.type === 'dish' && i.itemId === id));
+                if (usedInCombo) {
+                  Swal.fire({
+                    title: 'Acción Bloqueada',
+                    text: `No puedes eliminar este platillo porque forma parte del combo "${usedInCombo.name}". Elimínalo del combo primero.`,
+                    icon: 'error',
+                    confirmButtonColor: '#B91C1C'
+                  });
+                  return;
+                }
+                await deleteDoc(doc(db, 'dishes', id));
+              }}
+            />
+          ) : currentView === 'combos' ? (
+            <ComboInventoryView 
+              combos={combos}
+              dishes={dishes}
+              drinks={drinks}
+              onAddCombo={async (c) => await setDoc(doc(db, 'combos', c.id), c)}
+              onDeleteCombo={async (id) => await deleteDoc(doc(db, 'combos', id))}
             />
           ) : (
             <DrinkInventoryView 
               drinks={drinks} 
               onAddDrink={async (d) => await setDoc(doc(db, 'drinks', d.id), d)}
-              onDeleteDrink={async (id) => await deleteDoc(doc(db, 'drinks', id))}
+              onDeleteDrink={async (id) => {
+                const usedInCombo = combos.find(c => c.items?.some((i: any) => i.type === 'drink' && i.itemId === id));
+                if (usedInCombo) {
+                  Swal.fire({
+                    title: 'Acción Bloqueada',
+                    text: `No puedes eliminar esta bebida porque forma parte del combo "${usedInCombo.name}". Elimínala del combo primero.`,
+                    icon: 'error',
+                    confirmButtonColor: '#B91C1C'
+                  });
+                  return;
+                }
+                await deleteDoc(doc(db, 'drinks', id));
+              }}
             />
           )}
         </div>
@@ -676,7 +874,15 @@ export default function App() {
               {cart.map((item) => (
                 <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                   <div className="flex items-center gap-3">
-                    <span className="font-black text-[#B91C1C]">{String(item.quantity).padStart(2, '0')}</span>
+                    <input 
+                      type="number" 
+                      step="any"
+                      min="0"
+                      className="font-black text-[#B91C1C] text-lg w-16 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button"
+                      value={item.quantity}
+                      onChange={(e) => updateQuantityExact(item.id, e.target.value)}
+                      onBlur={() => handleBlurQuantity(item.id)}
+                    />
                     <div className="flex flex-col">
                       <span className="font-bold text-sm uppercase leading-tight">{item.menuItem.name}</span>
                       <div className="flex items-center gap-2 mt-1">
@@ -794,7 +1000,15 @@ export default function App() {
                 {cart.map((item) => (
                   <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                     <div className="flex items-center gap-3">
-                      <span className="font-black text-[#B91C1C] text-lg">{String(item.quantity).padStart(2, '0')}</span>
+                      <input 
+                        type="number" 
+                        step="any"
+                        min="0"
+                        className="font-black text-[#B91C1C] text-xl w-20 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button"
+                        value={item.quantity}
+                        onChange={(e) => updateQuantityExact(item.id, e.target.value)}
+                        onBlur={() => handleBlurQuantity(item.id)}
+                      />
                       <div className="flex flex-col">
                         <span className="font-bold text-sm uppercase leading-tight line-clamp-2">{item.menuItem.name}</span>
                         <div className="flex items-center gap-3 mt-1">

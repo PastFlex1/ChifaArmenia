@@ -193,21 +193,20 @@ export function DishInventoryView({
                  </div>
                  
                  {currentIngredients.length > 0 && (
-                   <div className="mt-2 flex flex-col gap-1 max-h-40 overflow-y-auto">
-                     {currentIngredients.map((ing, idx) => {
-                       const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-                       if (!rm) return null;
-                       return (
-                         <div key={idx} className="flex justify-between items-center bg-white p-2 border-2 border-black rounded-lg text-xs font-bold uppercase">
-                           <span>{rm.name} ({ing.quantity} {rm.unit})</span>
-                           <button type="button" onClick={() => handRemoveIngredient(rm.id)} className="text-red-600 hover:opacity-50">
-                             <Trash2 className="w-4 h-4" />
-                           </button>
-                         </div>
-                       )
-                     })}
-                   </div>
-                 )}
+                    <div className="mt-2 flex flex-col gap-1 max-h-40 overflow-y-auto">
+                      {currentIngredients.map((ing, idx) => {
+                        const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+                        return (
+                          <div key={idx} className={`flex justify-between items-center p-2 border-2 border-black rounded-lg text-xs font-bold uppercase ${!rm ? 'bg-red-100 text-red-700' : 'bg-white'}`}>
+                            <span>{rm ? `${rm.name} (${ing.quantity} ${rm.unit})` : `?? (ELIMINADO)`}</span>
+                            <button type="button" onClick={() => handRemoveIngredient(ing.rawMaterialId)} className="text-red-600 hover:opacity-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                  {currentIngredients.length === 0 && (
                    <p className="text-[10px] uppercase font-bold text-center opacity-40 mt-1">
                      Añade ingredientes para calcular costos

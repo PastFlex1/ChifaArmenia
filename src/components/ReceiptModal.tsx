@@ -183,11 +183,33 @@ export function ReceiptModal({ order, onClose }: Props) {
                 </div>
 
                 <div className="flex flex-col gap-1 mb-6 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
-                  <p>CLIENTE: CONSUMIDOR FINAL</p>
-                  <p>RUC/CI: 9999999999999</p>
-                  <div className="flex justify-between w-full items-end mt-2 text-[10px]">
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>CLIENTE:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>C.I:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>CORREO:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>TELF:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>DIR:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
+                    <span>F.NACIMIENTO:</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                  </div>
+                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>PROPINA:</span>
-                    <span className="flex-1 border-b border-black ml-2 mb-1"></span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
                   </div>
                 </div>
 
@@ -241,25 +263,19 @@ export function ReceiptModal({ order, onClose }: Props) {
                   </div>
                 </div>
 
-                {/* Footer */}
-                {order.sellerName && (
-                  <div className="text-left font-bold text-[10px] uppercase mb-4 font-sans border-t-2 border-black border-dashed pt-4">
-                    ATENDIDO POR: {order.sellerName}
-                  </div>
-                )}
-                
                 <div className="text-center text-[10px] font-bold uppercase mt-6">
                   <p>¡Gracias por su preferencia!</p>
+                  <p className="mt-1">ATENDIDO POR: {order.sellerName ? order.sellerName : 'CAJERO'}</p>
                 </div>
               </>
             ) : (
               <>
                 {/* Kitchen Ticket */}
-                <div className="text-center mb-6">
-                  <h1 className="text-3xl font-black mb-1 uppercase">COMANDA</h1>
-                  <div className="border-t-4 border-black w-full mt-4 pt-4">
-                    {order.tableNumber && <h2 className="text-4xl font-black uppercase">MESA: {order.tableNumber}</h2>}
-                    <p className="text-xl mt-2 font-black">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
+                <div className="text-center mb-4">
+                  <h1 className="text-xl font-black mb-1 uppercase">COMANDA</h1>
+                  <div className="border-t-2 border-black border-dashed w-full mt-2 pt-2">
+                    {order.tableNumber && <h2 className="text-lg font-black uppercase">MESA: {order.tableNumber}</h2>}
+                    <p className="text-sm mt-1 font-bold">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
                   </div>
                 </div>
 
@@ -280,9 +296,9 @@ export function ReceiptModal({ order, onClose }: Props) {
                 <div className="border-t-2 border-black pt-4">
                   <div className="space-y-4">
                     {order.items.map((item) => (
-                      <div key={item.id} className="flex gap-4 items-center border-b border-dashed border-gray-400 pb-4">
-                        <span className="text-4xl font-black text-[#B91C1C] min-w-[40px] tracking-tighter">{item.quantity}</span>
-                        <span className="text-2xl font-bold uppercase leading-tight">{item.menuItem.name}</span>
+                      <div key={item.id} className="flex gap-4 items-start pb-2">
+                        <span className="text-xs font-black min-w-[20px]">{item.quantity}</span>
+                        <span className="text-xs font-bold uppercase leading-tight">{item.menuItem.name}</span>
                       </div>
                     ))}
                   </div>

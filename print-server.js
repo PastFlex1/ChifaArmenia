@@ -35,6 +35,18 @@ function textToBuffer(text) {
   return Buffer.from(cleanText + '\n', 'latin1');
 }
 
+// ESC/POS Constants
+const INIT = Buffer.from([0x1B, 0x40]);
+const ALIGN_LEFT = Buffer.from([0x1B, 0x61, 0x00]);
+const ALIGN_CENTER = Buffer.from([0x1B, 0x61, 0x01]);
+const ALIGN_RIGHT = Buffer.from([0x1B, 0x61, 0x02]);
+const BOLD_ON = Buffer.from([0x1B, 0x45, 0x01]);
+const BOLD_OFF = Buffer.from([0x1B, 0x45, 0x00]);
+const NORMAL_SIZE = Buffer.from([0x1D, 0x21, 0x00]);
+const DOUBLE_HEIGHT = Buffer.from([0x1D, 0x21, 0x01]);
+const DOUBLE_WIDTH_HEIGHT = Buffer.from([0x1D, 0x21, 0x11]);
+const CUT = Buffer.from([0x1D, 0x56, 0x41, 0x10]);
+
 // Función principal de impresión
 function printTicket(jobId, order, ticketType) {
   return new Promise((resolve, reject) => {
@@ -68,8 +80,12 @@ function printTicket(jobId, order, ticketType) {
           }
           
           writeData(textToBuffer('--------------------------------'));
-          writeData(textToBuffer('CLIENTE: CONSUMIDOR FINAL'));
-          writeData(textToBuffer('RUC/CI: 9999999999999'));
+          writeData(textToBuffer('Cliente: '));
+          writeData(textToBuffer('C.I: '));
+          writeData(textToBuffer('Correo: '));
+          writeData(textToBuffer('Telf: '));
+          writeData(textToBuffer('Dir: '));
+          writeData(textToBuffer('F.Nacimiento: '));
           writeData(textToBuffer('--------------------------------'));
           
           writeData(textToBuffer('CANT   DESCRIPCION       TOTAL'));
@@ -95,18 +111,15 @@ function printTicket(jobId, order, ticketType) {
           writeData(ALIGN_CENTER);
           writeData(textToBuffer('--------------------------------'));
           writeData(textToBuffer('!GRACIAS POR SU PREFERENCIA!'));
+          writeData(textToBuffer(`ATENDIDO POR ${order.sellerName ? order.sellerName.toUpperCase() : 'CAJERO'}`));
           
         } else {
           writeData(ALIGN_CENTER);
-          writeData(DOUBLE_WIDTH_HEIGHT);
           writeData(BOLD_ON);
           writeData(textToBuffer('COMANDA'));
-          writeData(NORMAL_SIZE);
           
           if (order.tableNumber) {
-            writeData(DOUBLE_HEIGHT);
             writeData(textToBuffer(`MESA: ${order.tableNumber}`));
-            writeData(NORMAL_SIZE);
           }
           writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
           
@@ -114,10 +127,7 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('--------------------------------'));
           
           order.items.forEach(item => {
-            writeData(DOUBLE_HEIGHT);
             writeData(textToBuffer(`[${item.quantity}] x ${item.menuItem.name}`));
-            writeData(NORMAL_SIZE);
-            writeData(textToBuffer(''));
           });
           
           writeData(ALIGN_CENTER);
@@ -136,7 +146,8 @@ function printTicket(jobId, order, ticketType) {
            fs.writeFileSync(tempFile, finalBuffer);
            
            // En Windows, enviar archivo raw a impresora compartida
-           const command = `copy /b "${tempFile}" "\\\\127.0.0.1\\${PRINTER_SHARED_NAME_CAJA}"`;
+           const computerName = process.env.COMPUTERNAME || '127.0.0.1';
+           const command = `copy /b "${tempFile}" "\\\\${computerName}\\${PRINTER_SHARED_NAME_CAJA}"`;
            console.log(`[+] Enviando ticket por USB compartido: ${command}`);
            
            exec(command, (error) => {
@@ -177,8 +188,6 @@ function printTicket(jobId, order, ticketType) {
       } catch (e) {
         reject(e);
       }
-    });
-
   });
 }
 

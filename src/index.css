@@ -41,3 +41,14 @@
     visibility: visible;
   }
 }
+
+@layer utilities {
+  .hide-spin-button::-webkit-inner-spin-button,
+  .hide-spin-button::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .hide-spin-button {
+    -moz-appearance: textfield;
+  }
+}

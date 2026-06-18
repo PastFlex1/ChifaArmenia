@@ -25,6 +25,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /combos/{comboId} {
+      allow read, write: if true;
+    }
+
     match /print_jobs/{jobId} {
       allow read, write: if true;
     }

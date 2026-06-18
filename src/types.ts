@@ -1,4 +1,4 @@
-export type Category = 'Comidas' | 'Bebidas' | 'Bebidas Calientes' | 'Bebidas Frías';
+export type Category = 'Comidas' | 'Bebidas' | 'Bebidas Calientes' | 'Bebidas Frías' | 'Combos Familiares' | 'Combos Ideales' | 'Porciones';
 
 export type Role = 'Administrador' | 'Cajero' | 'Mesero';
 
@@ -18,6 +18,7 @@ export interface MenuItem {
   cost: number;
   description?: string;
   isDrink?: boolean;
+  isCombo?: boolean;
 }
 
 export interface CartItem {
@@ -69,5 +70,19 @@ export interface Drink {
   price: number;
   stock: number;
   unitCost: number;
+}
+
+export interface ComboItem {
+  type: 'dish' | 'drink';
+  itemId: string;
+  quantity: number;
+}
+
+export interface Combo {
+  id: string;
+  name: string;
+  category: Category;
+  price: number;
+  items: ComboItem[];
 }
 
