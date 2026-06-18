@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid } from 'lucide-react';
 import { CATEGORIES } from './data';
-import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount } from './types';
+import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
 import { MateriaPrimaView } from './components/MateriaPrimaView';
 import { DrinkInventoryView } from './components/DrinkInventoryView';
@@ -12,6 +12,7 @@ import { LoginView } from './components/LoginView';
 import { UsersView } from './components/UsersView';
 import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
+import { MesasView } from './components/MesasView';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import Swal from 'sweetalert2';
@@ -21,7 +22,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'combos' | 'ventas' | 'usuarios'>('pos');
+  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'combos' | 'ventas' | 'usuarios' | 'mesas'>('pos');
   const [activeCategory, setActiveCategory] = useState<Category | 'Todos'>('Todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -29,6 +30,8 @@ export default function App() {
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [activeTables, setActiveTables] = useState<TableOrder[]>([]);
+  const [activeTableId, setActiveTableId] = useState<string | null>(null);
   
   // Mobile Cart State
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -42,7 +45,7 @@ export default function App() {
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
-    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, orders: false };
+    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, orders: false, tables: false };
 
     const checkComplete = () => {
       if (Object.values(loadedState).every(Boolean)) {
@@ -102,6 +105,14 @@ export default function App() {
       if (!loadedState.combos) { loadedState.combos = true; checkComplete(); }
     });
 
+    const unsubTables = onSnapshot(collection(db, 'active_tables'), snapshot => {
+      setActiveTables(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as TableOrder)));
+      if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
+    }, (error) => {
+      console.error("Error fetching tables:", error);
+      if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
+    });
+
     return () => {
       unsubUsers();
       unsubRM();
@@ -109,6 +120,7 @@ export default function App() {
       unsubDrinks();
       unsubOrders();
       unsubCombos();
+      unsubTables();
     };
   }, []);
 
@@ -322,54 +334,134 @@ export default function App() {
     return cart.reduce((total, item) => total + (item.menuItem.price * item.quantity), 0);
   }, [cart]);
 
-  const handleCheckout = async () => {
-    if (cart.length === 0 || isCheckingOut) return;
-    setIsCheckingOut(true);
+  const handleTableClick = (tNumber: string) => {
+    const table = activeTables.find(t => t.tableNumber === tNumber);
+    if (table) {
+      setCart(table.items);
+    } else {
+      setCart([]);
+    }
+    setTableNumber(tNumber);
+    setActiveTableId(tNumber);
+    setCurrentView('pos');
+  };
 
-    // Deduct stock logically
-    const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
-    const newDrinks = drinks.map(d => ({ ...d }));
-
-    cart.forEach(cartItem => {
-      if (cartItem.menuItem.isCombo) {
-        const combo = combos.find(c => c.id === cartItem.menuItem.id);
-        if (combo) {
-          combo.items.forEach((cItem: any) => {
-            if (cItem.type === 'drink') {
-              const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
-              if (drinkIndex >= 0) {
-                newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity));
-              }
-            } else {
-              const dish = dishes.find(d => d.id === cItem.itemId);
-              if (dish) {
-                 dish.ingredients.forEach(ing => {
-                   const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-                   if (rmIndex >= 0) {
-                     newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity));
-                   }
-                 });
-              }
+    const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[]) => {
+      const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
+      const newDrinks = drinks.map(d => ({ ...d }));
+  
+      const processItems = (items: CartItem[], multiplier: number) => {
+        items.forEach(cartItem => {
+          if (cartItem.menuItem.isCombo) {
+            const combo = combos.find(c => c.id === cartItem.menuItem.id);
+            if (combo) {
+              combo.items.forEach((cItem: any) => {
+                if (cItem.type === 'drink') {
+                  const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
+                  if (drinkIndex >= 0) {
+                    newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity * multiplier));
+                  }
+                } else {
+                  const dish = dishes.find(d => d.id === cItem.itemId);
+                  if (dish) {
+                     dish.ingredients.forEach(ing => {
+                       const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+                       if (rmIndex >= 0) {
+                         newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier));
+                       }
+                     });
+                  }
+                }
+              });
             }
-          });
-        }
-      } else if (cartItem.menuItem.isDrink) {
-        const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
-        if (drinkIndex >= 0) {
-          newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - cartItem.quantity);
-        }
-      } else {
-        const dish = dishes.find(d => d.id === cartItem.menuItem.id);
-        if (dish) {
-           dish.ingredients.forEach(ing => {
-             const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-             if (rmIndex >= 0) {
-               newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity));
-             }
-           });
-        }
+          } else if (cartItem.menuItem.isDrink) {
+            const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
+            if (drinkIndex >= 0) {
+              newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier));
+            }
+          } else {
+            const dish = dishes.find(d => d.id === cartItem.menuItem.id);
+            if (dish) {
+               dish.ingredients.forEach(ing => {
+                 const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+                 if (rmIndex >= 0) {
+                   newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier));
+                 }
+               });
+            }
+          }
+        });
+      };
+  
+      processItems(oldItems, -1); // Devolver items viejos (+ stock)
+      processItems(newItems, 1);  // Descontar items nuevos (- stock)
+  
+      return { newRawMaterials, newDrinks };
+    };
+
+    const handleSaveTable = async () => {
+      if (cart.length === 0 || !activeTableId || isCheckingOut) return;
+      setIsCheckingOut(true);
+      
+      const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
+      const oldItems = previousTable ? previousTable.items : [];
+      
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
+      
+      const tableOrder: TableOrder = {
+        id: activeTableId,
+        tableNumber: activeTableId,
+        items: [...cart],
+        createdAt: previousTable ? previousTable.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sellerId: currentUser?.id,
+        sellerName: currentUser?.name
+      };
+
+      const batch = writeBatch(db);
+      newRawMaterials.forEach((rm, index) => {
+        if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+      });
+      newDrinks.forEach((drink, index) => {
+        if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+      });
+      batch.set(doc(db, 'active_tables', activeTableId), tableOrder);
+
+      try {
+        await batch.commit();
+        Swal.fire({ title: 'Éxito', text: `Mesa ${activeTableId} guardada correctamente.`, icon: 'success', timer: 1500, showConfirmButton: false });
+        clearCart();
+        setActiveTableId(null);
+        setCurrentView('mesas');
+      } catch (e) {
+        console.error("Error saving table:", e);
+        Swal.fire({ title: 'Error', text: 'Error al guardar la mesa.', icon: 'error', confirmButtonColor: '#000' });
+      } finally {
+        setIsCheckingOut(false);
       }
-    });
+    };
+
+    const handleCheckout = async () => {
+      if (cart.length === 0 || isCheckingOut) return;
+      
+      if (!tableNumber || tableNumber.trim() === '') {
+        Swal.fire({
+          title: 'Falta la Mesa',
+          text: 'Por favor, escribe el número de mesa o "Para llevar" en el campo antes de cobrar.',
+          icon: 'warning',
+          confirmButtonColor: '#B91C1C'
+        });
+        return;
+      }
+      
+      setIsCheckingOut(true);
+  
+      // Deduct stock logically
+      const oldItems = activeTableId ? (activeTables.find(t => t.tableNumber === activeTableId)?.items || []) : [];
+      // If we are checking out an active table, we must first REFUND its stock, then DEDUCT the final cart.
+      // Wait, if we are checking out right from the active table, getting the diff between oldItems and cart will ensure
+      // stock is perfectly deducted. Let's do getNetStockChanges(oldItems, cart) just like handleSaveTable!
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
 
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
     const profit = cartTotal - totalCost;
@@ -404,11 +496,15 @@ export default function App() {
     });
 
     batch.set(doc(db, 'orders', newOrder.id), newOrder);
+    if (activeTableId) {
+      batch.delete(doc(db, 'active_tables', activeTableId));
+    }
 
     try {
       await batch.commit();
       setCompletedOrder(newOrder);
       clearCart();
+      setActiveTableId(null);
     } catch (e) {
       console.error("Error confirming order:", e);
       Swal.fire({ title: 'Error', text: 'Error al confirmar el pedido. Revisa tu conexión.', icon: 'error', confirmButtonColor: '#000' });
@@ -507,7 +603,7 @@ export default function App() {
 
   const canView = (view: string) => {
     if (currentUser.role === 'Administrador') return true;
-    if (currentUser.role === 'Cajero' || currentUser.role === 'Mesero') return view === 'pos';
+    if (currentUser.role === 'Cajero' || currentUser.role === 'Mesero') return view === 'pos' || view === 'mesas';
     return false;
   };
 
@@ -520,7 +616,7 @@ export default function App() {
       {/* =========================================
           LEFT SIDEBAR (DESKTOP)
           ========================================= */}
-      <div className="hidden lg:flex w-[260px] flex-col shrink-0 gap-4 h-full z-10">
+      <div className="hidden lg:flex lg:w-[220px] xl:w-[260px] flex-col shrink-0 gap-4 h-full z-10">
         <div className="bg-[#B91C1C] text-white p-5 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
           <div className="flex flex-col z-10">
             <span className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Restaurante</span>
@@ -533,14 +629,29 @@ export default function App() {
         </div>
 
         <nav className="flex-1 bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
+          {canView('mesas') && (
+            <button
+              onClick={() => setCurrentView('mesas')}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
+                currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              <LayoutGrid className="w-5 h-5" /> Mesas
+            </button>
+          )}
           {canView('pos') && (
             <button
-              onClick={() => setCurrentView('pos')}
+              onClick={() => {
+                setActiveTableId(null);
+                setTableNumber('');
+                setCart([]);
+                setCurrentView('pos');
+              }}
               className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
                 currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
-              <Store className="w-5 h-5" /> Punta de Venta
+              <Store className="w-5 h-5" /> Punto de Venta
             </button>
           )}
           {canView('materia_prima') && (
@@ -685,7 +796,7 @@ export default function App() {
 
               {/* Menu Items Grid */}
               <div className="flex-1 overflow-y-auto p-4 content-start">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
                   {filteredItems.map((item) => {
                     const maxStock = getMaxAvailable(item);
                     const isOutOfStock = maxStock === 0;
@@ -739,6 +850,12 @@ export default function App() {
                 </div>
               </div>
             </div>
+          ) : currentView === 'mesas' ? (
+            <MesasView 
+              activeTables={activeTables}
+              onSelectTable={handleTableClick}
+              totalTables={30}
+            />
           ) : currentView === 'materia_prima' ? (
             <MateriaPrimaView 
               rawMaterials={rawMaterials} 
@@ -854,8 +971,8 @@ export default function App() {
             </div>
             <input
               type="text"
-              placeholder="Número de Mesa (Opcional)"
-              className="w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase"
+              placeholder="Mesa o Para llevar (Obligatorio)"
+              className="w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium"
               value={tableNumber}
               onChange={(e) => setTableNumber(e.target.value)}
             />
@@ -931,13 +1048,32 @@ export default function App() {
             >
               <Trash2 className="w-5 h-5 text-[#B91C1C]" />
             </button>
-            <button
-              onClick={handleCheckout}
-              disabled={cart.length === 0 || isCheckingOut}
-              className="flex-1 py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-[0.2em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-            >
-              {isCheckingOut ? 'Procesando...' : 'Cobrar y Emitir Nota'}
-            </button>
+            {activeTableId ? (
+              <div className="flex flex-col gap-2 flex-1">
+                <button
+                  onClick={handleSaveTable}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="w-full py-2 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-[#FFD700] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                >
+                  {isCheckingOut ? '...' : `Guardar en Mesa ${activeTableId}`}
+                </button>
+                <button
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="w-full py-2 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-[0.1em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                >
+                  {isCheckingOut ? '...' : 'Cobrar y Liberar'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleCheckout}
+                disabled={cart.length === 0 || isCheckingOut}
+                className="flex-1 py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-[0.2em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+              >
+                {isCheckingOut ? 'Procesando...' : 'Cobrar y Emitir Nota'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -980,8 +1116,8 @@ export default function App() {
               </div>
               <input
                 type="text"
-                placeholder="Número de Mesa (Opcional)"
-                className="w-full pl-9 pr-3 py-3 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                placeholder="Mesa o Para llevar (Obligatorio)"
+                className="w-full pl-9 pr-3 py-3 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] placeholder:normal-case placeholder:font-medium"
                 value={tableNumber}
                 onChange={(e) => setTableNumber(e.target.value)}
               />
@@ -1049,13 +1185,32 @@ export default function App() {
               </button>
             </div>
             
-            <button
-              onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
-              disabled={cart.length === 0 || isCheckingOut}
-              className="w-full py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-widest shadow-[4px_4px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-            >
-              {isCheckingOut ? 'Procesando...' : 'Cobrar Pedido'}
-            </button>
+            {activeTableId ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                >
+                  {isCheckingOut ? '...' : `Guardar M${activeTableId}`}
+                </button>
+                <button
+                  onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-widest shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                >
+                  {isCheckingOut ? '...' : 'Cobrar'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
+                disabled={cart.length === 0 || isCheckingOut}
+                className="w-full py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-widest shadow-[4px_4px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+              >
+                {isCheckingOut ? 'Procesando...' : 'Cobrar Pedido'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1128,6 +1283,9 @@ export default function App() {
                     setShowLogoutConfirm(false);
                     setCurrentUser(null);
                     setCurrentView('pos');
+                    setCart([]);
+                    setTableNumber('');
+                    setActiveTableId(null);
                   }}
                   className="flex-1 px-4 py-3 bg-[#B91C1C] border-2 border-black rounded-xl font-bold hover:bg-red-800 transition-colors text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)]"
                 >

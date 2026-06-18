@@ -117,10 +117,10 @@ export function ComboInventoryView({
   );
 
   return (
-    <div className="flex h-full gap-4 relative">
+    <div className="flex w-full h-full gap-4 overflow-y-auto xl:overflow-hidden flex-col xl:flex-row pb-[80px] xl:pb-0">
       {/* LEFT COLUMN: Add/Edit Combo Form */}
-      <div className="w-[380px] shrink-0 flex flex-col gap-4">
-        <div className="bg-white p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col">
+      <div className="w-full xl:w-[450px] shrink-0 flex flex-col gap-4">
+        <div className="bg-white p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col xl:h-full xl:overflow-y-auto scrollbar-hide">
           <div className="flex items-center gap-3 mb-6 pb-4 border-b-2 border-black/10">
             <div className="bg-[#B91C1C] p-2 rounded-xl text-white">
               <Layers className="w-6 h-6" />
@@ -270,7 +270,7 @@ export function ComboInventoryView({
       </div>
 
       {/* RIGHT COLUMN: Combos List */}
-      <div className="flex-1 bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden flex flex-col min-w-0">
+      <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="p-4 border-b-2 border-black bg-slate-50 flex justify-between items-center shrink-0">
           <div className="relative w-72">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 opacity-40" />

@@ -42,6 +42,16 @@ export interface Order {
   status?: 'active' | 'voided';
 }
 
+export interface TableOrder {
+  id: string; // matches tableNumber
+  tableNumber: string;
+  items: CartItem[];
+  createdAt: string;
+  updatedAt: string;
+  sellerId?: string;
+  sellerName?: string;
+}
+
 export interface RawMaterial {
   id: string;
   name: string;

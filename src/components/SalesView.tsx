@@ -105,7 +105,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
   }, [filteredOrders, timeRange]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto md:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] md:pb-0">
+    <div className="flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
       {/* Filters (Horizontal Top Bar) */}
       <div className="shrink-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {currentUser?.role === 'Administrador' && (
@@ -205,7 +205,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
         </div>
       </div>
 
-      <div className="shrink-0 md:flex-1 min-h-[500px] md:min-h-0 bg-white rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col">
+      <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col">
         <div className="p-4 border-b-2 border-black bg-slate-50 rounded-t-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2">
             <FileText className="w-5 h-5 text-[#B91C1C]" />
@@ -295,7 +295,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                       <div>
                         <h4 className="font-black text-sm uppercase">Pedido #{String(order.orderNumber).padStart(5, '0')}</h4>
                         <p className="text-[10px] font-bold opacity-60">
-                          {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
                         </p>
                       </div>
                     </div>

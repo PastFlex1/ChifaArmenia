@@ -15,6 +15,7 @@ interface Props {
 
 export function ReceiptModal({ order, onClose }: Props) {
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
+  const [isPrinting, setIsPrinting] = useState(false);
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
 
   // Función para guardar el ticket en la nube de Firebase
@@ -34,36 +35,46 @@ export function ReceiptModal({ order, onClose }: Props) {
   };
 
   const handlePrintCustomer = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
     setTicketType('customer');
     
     // 1. Enviamos a la nube
     const success = await printViaCloudQueue('customer');
     if (success) {
       Swal.fire('Enviado a Cola', 'Ticket en cola de impresión', 'success');
+      setIsPrinting(false);
       return;
     }
     
     // 2. Fallback: Diálogo del navegador si no hay internet o falla Firebase
     setTimeout(() => {
       window.print();
+      setIsPrinting(false);
     }, 100);
   };
 
   const handlePrintKitchen = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
     setTicketType('kitchen');
     
     const success = await printViaCloudQueue('kitchen');
     if (success) {
       Swal.fire('Enviado a Cola', 'Comanda en cola de impresión de cocina', 'success');
+      setIsPrinting(false);
       return;
     }
 
     setTimeout(() => {
       window.print();
+      setIsPrinting(false);
     }, 100);
   };
 
   const handlePrintBoth = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
     setTicketType('customer');
     
     // Enviamos primero al cliente a la cola
@@ -76,6 +87,7 @@ export function ReceiptModal({ order, onClose }: Props) {
       
       if (successCustomer && successKitchen) {
         Swal.fire('Enviado a Cola', 'Ambos tickets en cola de impresión', 'success');
+        setIsPrinting(false);
       } else {
         // Fallback total
         setTicketType('customer');
@@ -85,6 +97,7 @@ export function ReceiptModal({ order, onClose }: Props) {
             setTicketType('kitchen');
             setTimeout(() => {
               window.print();
+              setIsPrinting(false);
             }, 100);
           }, 500);
         }, 100);
@@ -174,7 +187,7 @@ export function ReceiptModal({ order, onClose }: Props) {
                   <p className="text-xs font-bold uppercase mb-1">ALVAREZ ZAMORA RUTH GARDENIA</p>
                   <p className="text-xs font-bold uppercase mb-2">RUC: 0923809529001</p>
                   <div className="border-t-2 border-dashed border-black w-full mt-4 pt-4 text-left font-sans">
-                    <p className="text-xs font-bold uppercase mb-1">Impreso: {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                    <p className="text-xs font-bold uppercase mb-1">Impreso: {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</p>
                     <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
                     {order.tableNumber && (
                       <p className="text-xs font-bold uppercase mb-1">MESAS: {order.tableNumber}</p>
@@ -182,7 +195,7 @@ export function ReceiptModal({ order, onClose }: Props) {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1 mb-6 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
+                <div className="flex flex-col gap-1 mb-4 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>CLIENTE:</span>
                     <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
@@ -207,9 +220,13 @@ export function ReceiptModal({ order, onClose }: Props) {
                     <span>F.NACIMIENTO:</span>
                     <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
                   </div>
-                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
-                    <span>PROPINA:</span>
-                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                </div>
+
+                {/* TIP COMPONENT */}
+                <div className="mb-6 pt-4 pb-2 border-t-2 border-black border-dashed flex justify-center">
+                  <div className="border-2 border-black rounded-lg px-4 py-2 w-full max-w-[200px] flex flex-col justify-center items-center bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <span className="font-black text-sm uppercase">Propina</span>
+                    <span className="font-bold text-lg mt-1">$ ____________</span>
                   </div>
                 </div>
 
@@ -282,7 +299,7 @@ export function ReceiptModal({ order, onClose }: Props) {
                 <div className="mb-6 text-sm font-bold font-sans">
                   <div className="flex justify-between mb-1">
                     <span className="opacity-60 uppercase">Hora:</span>
-                    <span>{new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <span>{new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
                   </div>
                   {order.sellerName && (
                     <div className="flex justify-between mb-1">
@@ -316,33 +333,37 @@ export function ReceiptModal({ order, onClose }: Props) {
         {/* Actions - Hidden in Print */}
         <div className="p-4 bg-slate-50 border-t-2 border-black flex flex-col gap-2 print:hidden rounded-b-xl shrink-0">
           <button
-            className="w-full py-4 bg-[#FFD700] text-black border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-center items-center gap-2"
+            className={`w-full py-4 bg-[#FFD700] text-black border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-center items-center gap-2 ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
             onClick={handlePrintBoth}
+            disabled={isPrinting}
           >
             <CheckSquare className="w-5 h-5" />
-            Imprimir Todo Secuencialmente
+            {isPrinting ? 'Enviando...' : 'Imprimir Todo Secuencialmente'}
           </button>
           
           <div className="flex gap-2">
             <button
-              className="flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1"
+              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handlePrintCustomer}
+              disabled={isPrinting}
             >
               <Receipt className="w-4 h-4" />
-              Solo Factura
+              {isPrinting ? '...' : 'Solo Factura'}
             </button>
             <button
-              className="flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1"
+              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handlePrintKitchen}
+              disabled={isPrinting}
             >
               <ChefHat className="w-4 h-4" />
-              Solo Comanda
+              {isPrinting ? '...' : 'Solo Comanda'}
             </button>
           </div>
 
           <button
             className="w-full py-3 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2"
             onClick={handleDownloadPDF}
+            disabled={isPrinting}
           >
             <Download className="w-4 h-4" />
             Descargar {ticketType === 'customer' ? 'Factura' : 'Comanda'} (PDF)

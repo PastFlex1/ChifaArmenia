@@ -67,10 +67,10 @@ export function DrinkInventoryView({
   );
 
   return (
-    <div className="flex w-full h-full gap-4 overflow-y-auto md:overflow-hidden flex-col md:flex-row pb-[80px] md:pb-0">
+    <div className="flex w-full h-full gap-4 overflow-y-auto xl:overflow-hidden flex-col xl:flex-row pb-[80px] xl:pb-0">
       {/* Form Container */}
-      <div className="w-full md:w-[400px] flex flex-col gap-4 shrink-0">
-        <div className="bg-white p-6 rounded-2xl border-2 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col md:h-full md:overflow-y-auto scrollbar-hide">
+      <div className="w-full xl:w-[400px] flex flex-col gap-4 shrink-0">
+        <div className="bg-white p-6 rounded-2xl border-2 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col xl:h-full xl:overflow-y-auto scrollbar-hide">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-blue-500 rounded-xl border-2 border-black flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-white">
               <CupSoda className="w-5 h-5" />
@@ -146,7 +146,7 @@ export function DrinkInventoryView({
         </div>
       </div>
       {/* Right List */}
-      <div className="shrink-0 md:flex-1 min-h-[500px] md:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
+      <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
            <h2 className="font-black uppercase tracking-widest italic shrink-0">Inventario Bebidas</h2>
            <div className="relative w-full max-w-md">
