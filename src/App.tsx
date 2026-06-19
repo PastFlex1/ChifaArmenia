@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer } from 'lucide-react';
 import { CATEGORIES } from './data';
 import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -511,6 +511,26 @@ export default function App() {
     } finally {
       setIsCheckingOut(false);
     }
+  };
+
+  const handlePrintPreview = () => {
+    if (cart.length === 0) return;
+    const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
+    const mockOrder: Order = {
+      id: 'preview-' + Date.now(),
+      orderNumber: orders.length + 1,
+      date: new Date().toISOString(),
+      customerName: '',
+      tableNumber: tableNumber || 'S/N',
+      items: [...cart],
+      total: cartTotal,
+      totalCost,
+      profit: cartTotal - totalCost,
+      sellerId: currentUser?.id,
+      sellerName: currentUser?.name,
+      status: 'active'
+    };
+    setCompletedOrder(mockOrder);
   };
 
   const handleCloseReceipt = () => {
@@ -1048,6 +1068,14 @@ export default function App() {
             >
               <Trash2 className="w-5 h-5 text-[#B91C1C]" />
             </button>
+            <button
+              onClick={handlePrintPreview}
+              disabled={cart.length === 0 || isCheckingOut}
+              className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+              title="Imprimir Pre-cuenta o Comanda"
+            >
+              <Printer className="w-5 h-5 text-black" />
+            </button>
             {activeTableId ? (
               <div className="flex flex-col gap-2 flex-1">
                 <button
@@ -1176,13 +1204,22 @@ export default function App() {
                 <span className="opacity-60 text-[10px] font-bold uppercase">Total (Inc. IVA)</span>
                 <span className="text-2xl font-black">{formatPrice(cartTotal)}</span>
               </div>
-              <button
-                onClick={clearCart}
-                disabled={cart.length === 0 || isCheckingOut}
-                className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
-              >
-                <Trash2 className="w-5 h-5 text-[#B91C1C]" />
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={clearCart}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  <Trash2 className="w-5 h-5 text-[#B91C1C]" />
+                </button>
+                <button
+                  onClick={handlePrintPreview}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  <Printer className="w-5 h-5 text-black" />
+                </button>
+              </div>
             </div>
             
             {activeTableId ? (
@@ -1217,6 +1254,12 @@ export default function App() {
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-black flex justify-around items-center h-[72px] px-1 z-50 shadow-[0px_-4px_0px_0px_rgba(0,0,0,0.1)] overflow-x-auto">
+        {canView('mesas') && (
+           <button onClick={() => setCurrentView('mesas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'mesas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+             <LayoutGrid className="w-5 h-5"/>
+             <span className="text-[9px] font-black uppercase tracking-wider">Mesas</span>
+           </button>
+        )}
         {canView('pos') && (
            <button onClick={() => setCurrentView('pos')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'pos' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
              <Store className="w-5 h-5"/>
