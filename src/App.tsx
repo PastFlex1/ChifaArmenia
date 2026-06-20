@@ -14,7 +14,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 
 export default function App() {
@@ -37,6 +37,10 @@ export default function App() {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
+  // Optimization States
+  const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year'>('day');
+  const [orderCounter, setOrderCounter] = useState<number>(0);
+
   // Inventories State
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -45,7 +49,7 @@ export default function App() {
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
-    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, orders: false, tables: false };
+    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, tables: false };
 
     const checkComplete = () => {
       if (Object.values(loadedState).every(Boolean)) {
@@ -89,14 +93,6 @@ export default function App() {
       if (!loadedState.drinks) { loadedState.drinks = true; checkComplete(); }
     });
 
-    const unsubOrders = onSnapshot(collection(db, 'orders'), snapshot => {
-      setOrders(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order)));
-      if (!loadedState.orders) { loadedState.orders = true; checkComplete(); }
-    }, (error) => {
-      console.error("Error fetching orders:", error);
-      if (!loadedState.orders) { loadedState.orders = true; checkComplete(); }
-    });
-
     const unsubCombos = onSnapshot(collection(db, 'combos'), snapshot => {
       setCombos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
       if (!loadedState.combos) { loadedState.combos = true; checkComplete(); }
@@ -113,16 +109,51 @@ export default function App() {
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     });
 
+    const unsubCounter = onSnapshot(doc(db, 'counters', 'orders'), (docSnap) => {
+      if (docSnap.exists()) {
+        setOrderCounter(docSnap.data().count || 0);
+      } else {
+        setDoc(docSnap.ref, { count: 0 });
+      }
+    });
+
     return () => {
       unsubUsers();
       unsubRM();
       unsubDishes();
       unsubDrinks();
-      unsubOrders();
       unsubCombos();
       unsubTables();
+      unsubCounter();
     };
   }, []);
+
+  // Dedicated Orders Listener with TimeRange Filtering
+  useEffect(() => {
+    let qOrders = collection(db, 'orders') as any;
+    const now = new Date();
+    
+    if (timeRange === 'day') {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      qOrders = query(collection(db, 'orders'), where('date', '>=', startOfDay.toISOString()));
+    } else if (timeRange === 'week') {
+      const currentDay = now.getDay();
+      const daysToMonday = currentDay === 0 ? 6 : currentDay - 1;
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
+      qOrders = query(collection(db, 'orders'), where('date', '>=', startOfWeek.toISOString()));
+    } else if (timeRange === 'year') {
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      qOrders = query(collection(db, 'orders'), where('date', '>=', startOfYear.toISOString()));
+    }
+
+    const unsubOrders = onSnapshot(qOrders, snapshot => {
+      setOrders(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order)));
+    }, (error) => {
+      console.error("Error fetching orders:", error);
+    });
+
+    return () => unsubOrders();
+  }, [timeRange]);
 
   // Derived POS Items from Inventories
   const posItems: MenuItem[] = useMemo(() => {
@@ -465,10 +496,12 @@ export default function App() {
 
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
     const profit = cartTotal - totalCost;
+    
+    const nextOrderNumber = orderCounter + 1;
 
     const newOrder: Order = {
       id: Date.now().toString(),
-      orderNumber: orders.length + 1,
+      orderNumber: nextOrderNumber,
       date: new Date().toISOString(),
       customerName: '', // Customer name has been removed
       tableNumber,
@@ -482,6 +515,7 @@ export default function App() {
     };
 
     const batch = writeBatch(db);
+    batch.set(doc(db, 'counters', 'orders'), { count: increment(1) }, { merge: true });
 
     newRawMaterials.forEach((rm, index) => {
       if (rm.stock !== rawMaterials[index].stock) {
@@ -518,7 +552,7 @@ export default function App() {
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
     const mockOrder: Order = {
       id: 'preview-' + Date.now(),
-      orderNumber: orders.length + 1,
+      orderNumber: orderCounter + 1,
       date: new Date().toISOString(),
       customerName: '',
       tableNumber: tableNumber || 'S/N',
@@ -901,6 +935,8 @@ export default function App() {
               onViewReceipt={(order) => setCompletedOrder(order)}
               onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}
               onVoidOrder={handleVoidOrder}
+              timeRange={timeRange}
+              setTimeRange={setTimeRange}
             />
           ) : currentView === 'usuarios' ? (
             <UsersView

@@ -9,11 +9,12 @@ interface SalesViewProps {
   onViewReceipt: (order: Order) => void;
   onDeleteOrder?: (id: string) => void;
   onVoidOrder?: (id: string) => void;
+  timeRange: 'all' | 'day' | 'week' | 'year';
+  setTimeRange: (range: 'all' | 'day' | 'week' | 'year') => void;
 }
 
-export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder }: SalesViewProps) {
+export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange }: SalesViewProps) {
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
-  const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
