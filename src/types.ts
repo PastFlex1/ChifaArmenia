@@ -25,6 +25,7 @@ export interface CartItem {
   id: string;
   menuItem: MenuItem;
   quantity: number;
+  printedQuantity?: number;
 }
 
 export interface Order {

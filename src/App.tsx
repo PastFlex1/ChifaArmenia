@@ -109,11 +109,12 @@ export default function App() {
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     });
 
-    const unsubCounter = onSnapshot(doc(db, 'counters', 'orders'), (docSnap) => {
+    const counterRef = doc(db, 'counters', 'orders');
+    const unsubCounter = onSnapshot(counterRef, (docSnap: any) => {
       if (docSnap.exists()) {
-        setOrderCounter(docSnap.data().count || 0);
+        setOrderCounter(docSnap.data()?.count || 0);
       } else {
-        setDoc(docSnap.ref, { count: 0 });
+        setDoc(counterRef, { count: 0 });
       }
     });
 
@@ -430,19 +431,20 @@ export default function App() {
       return { newRawMaterials, newDrinks };
     };
 
-    const handleSaveTable = async () => {
-      if (cart.length === 0 || !activeTableId || isCheckingOut) return;
+    const handleSaveTable = async (customCart?: CartItem[] | any) => {
+      const itemsToSave = Array.isArray(customCart) ? customCart : cart;
+      if (itemsToSave.length === 0 || !activeTableId || isCheckingOut) return;
       setIsCheckingOut(true);
       
       const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
       const oldItems = previousTable ? previousTable.items : [];
       
-      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, itemsToSave);
       
       const tableOrder: TableOrder = {
         id: activeTableId,
         tableNumber: activeTableId,
-        items: [...cart],
+        items: [...itemsToSave],
         createdAt: previousTable ? previousTable.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         sellerId: currentUser?.id,
@@ -1378,7 +1380,17 @@ export default function App() {
 
       {/* Receipt Modal (Nota de Venta) */}
       {completedOrder && (
-        <ReceiptModal order={completedOrder} onClose={handleCloseReceipt} />
+        <ReceiptModal 
+          order={completedOrder} 
+          onClose={handleCloseReceipt} 
+          onKitchenPrint={() => {
+            const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
+            setCart(newCart);
+            if (activeTableId && completedOrder.id.startsWith('preview')) {
+               handleSaveTable(newCart);
+            }
+          }}
+        />
       )}
 
     </div>

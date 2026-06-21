@@ -11,18 +11,27 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 interface Props {
   order: Order;
   onClose: () => void;
+  onKitchenPrint?: () => void;
 }
 
-export function ReceiptModal({ order, onClose }: Props) {
+export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
   const [isPrinting, setIsPrinting] = useState(false);
+  const isPrintingRef = React.useRef(false);
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
 
+  const kitchenItems = order.items
+    .filter(item => item.quantity > (item.printedQuantity || 0))
+    .map(item => ({
+      ...item,
+      quantity: item.quantity - (item.printedQuantity || 0)
+    }));
+
   // Función para guardar el ticket en la nube de Firebase
-  const printViaCloudQueue = async (type: 'customer' | 'kitchen') => {
+  const printViaCloudQueue = async (type: 'customer' | 'kitchen', orderToPrint: Order) => {
     try {
       await addDoc(collection(db, 'print_jobs'), {
-        order: order,
+        order: orderToPrint,
         ticketType: type,
         status: 'pending',
         createdAt: serverTimestamp()
@@ -35,15 +44,17 @@ export function ReceiptModal({ order, onClose }: Props) {
   };
 
   const handlePrintCustomer = async () => {
-    if (isPrinting) return;
+    if (isPrintingRef.current) return;
+    isPrintingRef.current = true;
     setIsPrinting(true);
     setTicketType('customer');
     
     // 1. Enviamos a la nube
-    const success = await printViaCloudQueue('customer');
+    const success = await printViaCloudQueue('customer', order);
     if (success) {
       Swal.fire('Enviado a Cola', 'Ticket en cola de impresión', 'success');
       setIsPrinting(false);
+      isPrintingRef.current = false;
       return;
     }
     
@@ -51,43 +62,62 @@ export function ReceiptModal({ order, onClose }: Props) {
     setTimeout(() => {
       window.print();
       setIsPrinting(false);
+      isPrintingRef.current = false;
     }, 100);
   };
 
   const handlePrintKitchen = async () => {
-    if (isPrinting) return;
+    if (isPrintingRef.current) return;
+    if (kitchenItems.length === 0) {
+      Swal.fire('Atención', 'No hay productos nuevos para enviar a cocina.', 'info');
+      return;
+    }
+    isPrintingRef.current = true;
     setIsPrinting(true);
     setTicketType('kitchen');
     
-    const success = await printViaCloudQueue('kitchen');
+    const success = await printViaCloudQueue('kitchen', { ...order, items: kitchenItems });
     if (success) {
       Swal.fire('Enviado a Cola', 'Comanda en cola de impresión de cocina', 'success');
       setIsPrinting(false);
+      isPrintingRef.current = false;
+      onKitchenPrint?.();
       return;
     }
 
     setTimeout(() => {
       window.print();
       setIsPrinting(false);
+      isPrintingRef.current = false;
     }, 100);
   };
 
   const handlePrintBoth = async () => {
-    if (isPrinting) return;
+    if (isPrintingRef.current) return;
+    isPrintingRef.current = true;
     setIsPrinting(true);
     setTicketType('customer');
     
     // Enviamos primero al cliente a la cola
-    const successCustomer = await printViaCloudQueue('customer');
+    const successCustomer = await printViaCloudQueue('customer', order);
     
     setTimeout(async () => {
       setTicketType('kitchen');
       // Enviamos luego a cocina a la cola
-      const successKitchen = await printViaCloudQueue('kitchen');
+      let successKitchen = false;
+      if (kitchenItems.length > 0) {
+        successKitchen = await printViaCloudQueue('kitchen', { ...order, items: kitchenItems });
+      } else {
+        successKitchen = true;
+      }
       
       if (successCustomer && successKitchen) {
-        Swal.fire('Enviado a Cola', 'Ambos tickets en cola de impresión', 'success');
+        Swal.fire('Enviado a Cola', kitchenItems.length > 0 ? 'Ambos tickets en cola de impresión' : 'Ticket cliente en cola (sin productos nuevos para cocina)', 'success');
         setIsPrinting(false);
+        isPrintingRef.current = false;
+        if (kitchenItems.length > 0) {
+          onKitchenPrint?.();
+        }
       } else {
         // Fallback total
         setTicketType('customer');
@@ -98,6 +128,7 @@ export function ReceiptModal({ order, onClose }: Props) {
             setTimeout(() => {
               window.print();
               setIsPrinting(false);
+              isPrintingRef.current = false;
             }, 100);
           }, 500);
         }, 100);
@@ -312,7 +343,10 @@ export function ReceiptModal({ order, onClose }: Props) {
                 {/* Items */}
                 <div className="border-t-2 border-black pt-4">
                   <div className="space-y-4">
-                    {order.items.map((item) => (
+                    {kitchenItems.length === 0 && (
+                       <p className="text-center text-xs opacity-50 uppercase font-bold py-2">No hay productos nuevos</p>
+                    )}
+                    {kitchenItems.map((item) => (
                       <div key={item.id} className="flex gap-4 items-start pb-2">
                         <span className="text-xs font-black min-w-[20px]">{item.quantity}</span>
                         <span className="text-xs font-bold uppercase leading-tight">{item.menuItem.name}</span>

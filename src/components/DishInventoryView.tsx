@@ -132,7 +132,7 @@ export function DishInventoryView({
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-black uppercase opacity-60">Precio Venta (USD/)</label>
                 <input
-                  type="number" step="0.10" min="0.1" required placeholder="0.00" value={formData.price}
+                  type="number" step="0.01" min="0.01" required placeholder="0.00" value={formData.price}
                   onChange={e => setFormData({ ...formData, price: e.target.value })}
                   className="w-full px-4 py-3 border-2 border-black rounded-xl font-bold uppercase text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] transition-all bg-[#F7F4F0]"
                 />
