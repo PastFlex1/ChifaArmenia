@@ -102,13 +102,13 @@ export function MateriaPrimaView({
                 <label className="text-xs font-black uppercase opacity-60">Cantidad (Stock)</label>
                 <input 
                   type="number" 
-                  step="0.01"
+                  step="1"
                   min="0"
                   required
-                  placeholder="0.00"
+                  placeholder="0"
                   value={formData.stock}
-                  onChange={e => setFormData({ ...formData, stock: e.target.value })}
-                  className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors"
+                  onChange={e => setFormData({ ...formData, stock: e.target.value.replace(/[^0-9]/g, '') })}
+                  className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors hide-spin-button"
                 />
               </div>
               <div className="flex flex-col gap-1 flex-1">
@@ -121,7 +121,7 @@ export function MateriaPrimaView({
                   placeholder="0.00"
                   value={formData.unitCost}
                   onChange={e => setFormData({ ...formData, unitCost: e.target.value })}
-                  className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors"
+                  className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors hide-spin-button"
                 />
               </div>
             </div>
@@ -180,7 +180,7 @@ export function MateriaPrimaView({
                    <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
                      <div>
                        <span className="block text-[10px] uppercase font-bold opacity-50">Stock Total</span>
-                       <span className="font-black text-lg">{item.stock} <span className="text-sm opacity-60">{item.unit}</span></span>
+                       <span className="font-black text-lg">{Number.isInteger(item.stock) ? item.stock : (Math.round(item.stock * 1000) / 1000)} <span className="text-sm opacity-60">{item.unit}</span></span>
                      </div>
                      <div>
                        <span className="block text-[10px] uppercase font-bold opacity-50">Costo</span>

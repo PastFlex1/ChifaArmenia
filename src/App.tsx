@@ -399,7 +399,8 @@ export default function App() {
                      dish.ingredients.forEach(ing => {
                        const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
                        if (rmIndex >= 0) {
-                         newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier));
+                         const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier);
+                         newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                        }
                      });
                   }
@@ -409,7 +410,8 @@ export default function App() {
           } else if (cartItem.menuItem.isDrink) {
             const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
             if (drinkIndex >= 0) {
-              newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier));
+              const newVal = newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier);
+              newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
             }
           } else {
             const dish = dishes.find(d => d.id === cartItem.menuItem.id);
@@ -417,7 +419,8 @@ export default function App() {
                dish.ingredients.forEach(ing => {
                  const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
                  if (rmIndex >= 0) {
-                   newRawMaterials[rmIndex].stock = Math.max(0, newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier));
+                   const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier);
+                   newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                  }
                });
             }
