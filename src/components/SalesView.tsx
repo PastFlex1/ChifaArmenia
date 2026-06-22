@@ -9,11 +9,13 @@ interface SalesViewProps {
   onViewReceipt: (order: Order) => void;
   onDeleteOrder?: (id: string) => void;
   onVoidOrder?: (id: string) => void;
-  timeRange: 'all' | 'day' | 'week' | 'year';
-  setTimeRange: (range: 'all' | 'day' | 'week' | 'year') => void;
+  timeRange: 'all' | 'day' | 'week' | 'year' | 'custom';
+  setTimeRange: (range: 'all' | 'day' | 'week' | 'year' | 'custom') => void;
+  customDateRange: { start: string; end: string };
+  setCustomDateRange: (range: { start: string; end: string }) => void;
 }
 
-export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange }: SalesViewProps) {
+export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -48,10 +50,29 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
       filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfWeek);
     } else if (timeRange === 'year') {
       filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfYear);
+    } else if (timeRange === 'custom') {
+      if (customDateRange.start && customDateRange.end) {
+        const start = new Date(customDateRange.start);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(customDateRange.end);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(o => {
+          const t = new Date(o.date).getTime();
+          return t >= start.getTime() && t <= end.getTime();
+        });
+      } else if (customDateRange.start) {
+        const start = new Date(customDateRange.start);
+        start.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(o => new Date(o.date).getTime() >= start.getTime());
+      } else if (customDateRange.end) {
+        const end = new Date(customDateRange.end);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(o => new Date(o.date).getTime() <= end.getTime());
+      }
     }
 
     return filtered;
-  }, [orders, selectedSeller, timeRange]);
+  }, [orders, selectedSeller, timeRange, customDateRange]);
 
   const formatPrice = (price: number) => `USD/ ${price.toFixed(2)}`;
 
@@ -103,7 +124,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     });
 
     return Array.from(dataByDate.values());
-  }, [filteredOrders, timeRange]);
+  }, [filteredOrders, timeRange, validOrders]);
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
@@ -171,7 +192,38 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
         >
           Este Año
         </button>
+        <button
+          onClick={() => setTimeRange('custom')}
+          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
+             timeRange === 'custom' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
+          }`}
+        >
+          Personalizado
+        </button>
       </div>
+
+      {timeRange === 'custom' && (
+        <div className="shrink-0 flex gap-3 items-center overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <span className="text-xs font-black uppercase">Desde:</span>
+            <input 
+              type="date" 
+              className="outline-none text-sm font-bold bg-transparent"
+              value={customDateRange.start}
+              onChange={e => setCustomDateRange({ ...customDateRange, start: e.target.value })}
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <span className="text-xs font-black uppercase">Hasta:</span>
+            <input 
+              type="date" 
+              className="outline-none text-sm font-bold bg-transparent"
+              value={customDateRange.end}
+              onChange={e => setCustomDateRange({ ...customDateRange, end: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Top Stats - Swipeable on mobile */}
       <div className="flex gap-3 sm:gap-4 shrink-0 overflow-x-auto pb-2 scrollbar-hide snap-x">

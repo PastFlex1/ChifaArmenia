@@ -38,7 +38,8 @@ export default function App() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Optimization States
-  const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year'>('day');
+  const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year' | 'custom'>('day');
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [orderCounter, setOrderCounter] = useState<number>(0);
 
   // Inventories State
@@ -145,6 +146,22 @@ export default function App() {
     } else if (timeRange === 'year') {
       const startOfYear = new Date(now.getFullYear(), 0, 1);
       qOrders = query(collection(db, 'orders'), where('date', '>=', startOfYear.toISOString()));
+    } else if (timeRange === 'custom') {
+      if (customDateRange.start && customDateRange.end) {
+        const start = new Date(customDateRange.start);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(customDateRange.end);
+        end.setHours(23, 59, 59, 999);
+        qOrders = query(collection(db, 'orders'), where('date', '>=', start.toISOString()), where('date', '<=', end.toISOString()));
+      } else if (customDateRange.start) {
+        const start = new Date(customDateRange.start);
+        start.setHours(0, 0, 0, 0);
+        qOrders = query(collection(db, 'orders'), where('date', '>=', start.toISOString()));
+      } else if (customDateRange.end) {
+        const end = new Date(customDateRange.end);
+        end.setHours(23, 59, 59, 999);
+        qOrders = query(collection(db, 'orders'), where('date', '<=', end.toISOString()));
+      }
     }
 
     const unsubOrders = onSnapshot(qOrders, snapshot => {
@@ -154,7 +171,7 @@ export default function App() {
     });
 
     return () => unsubOrders();
-  }, [timeRange]);
+  }, [timeRange, customDateRange]);
 
   // Derived POS Items from Inventories
   const posItems: MenuItem[] = useMemo(() => {
@@ -942,6 +959,8 @@ export default function App() {
               onVoidOrder={handleVoidOrder}
               timeRange={timeRange}
               setTimeRange={setTimeRange}
+              customDateRange={customDateRange}
+              setCustomDateRange={setCustomDateRange}
             />
           ) : currentView === 'usuarios' ? (
             <UsersView
