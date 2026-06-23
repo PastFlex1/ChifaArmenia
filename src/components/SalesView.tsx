@@ -52,20 +52,24 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
       filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfYear);
     } else if (timeRange === 'custom') {
       if (customDateRange.start && customDateRange.end) {
-        const start = new Date(customDateRange.start);
+        const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
+        const start = new Date(sYear, sMonth - 1, sDay);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(customDateRange.end);
+        const [eYear, eMonth, eDay] = customDateRange.end.split('-').map(Number);
+        const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
         filtered = filtered.filter(o => {
           const t = new Date(o.date).getTime();
           return t >= start.getTime() && t <= end.getTime();
         });
       } else if (customDateRange.start) {
-        const start = new Date(customDateRange.start);
+        const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
+        const start = new Date(sYear, sMonth - 1, sDay);
         start.setHours(0, 0, 0, 0);
         filtered = filtered.filter(o => new Date(o.date).getTime() >= start.getTime());
       } else if (customDateRange.end) {
-        const end = new Date(customDateRange.end);
+        const [eYear, eMonth, eDay] = customDateRange.end.split('-').map(Number);
+        const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
         filtered = filtered.filter(o => new Date(o.date).getTime() <= end.getTime());
       }

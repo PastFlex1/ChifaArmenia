@@ -148,17 +148,21 @@ export default function App() {
       qOrders = query(collection(db, 'orders'), where('date', '>=', startOfYear.toISOString()));
     } else if (timeRange === 'custom') {
       if (customDateRange.start && customDateRange.end) {
-        const start = new Date(customDateRange.start);
+        const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
+        const start = new Date(sYear, sMonth - 1, sDay);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(customDateRange.end);
+        const [eYear, eMonth, eDay] = customDateRange.end.split('-').map(Number);
+        const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
         qOrders = query(collection(db, 'orders'), where('date', '>=', start.toISOString()), where('date', '<=', end.toISOString()));
       } else if (customDateRange.start) {
-        const start = new Date(customDateRange.start);
+        const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
+        const start = new Date(sYear, sMonth - 1, sDay);
         start.setHours(0, 0, 0, 0);
         qOrders = query(collection(db, 'orders'), where('date', '>=', start.toISOString()));
       } else if (customDateRange.end) {
-        const end = new Date(customDateRange.end);
+        const [eYear, eMonth, eDay] = customDateRange.end.split('-').map(Number);
+        const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
         qOrders = query(collection(db, 'orders'), where('date', '<=', end.toISOString()));
       }
