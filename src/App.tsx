@@ -523,12 +523,17 @@ export default function App() {
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
     const profit = cartTotal - totalCost;
     
-    const nextOrderNumber = orderCounter + 1;
+    const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
+    const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
+
+    // Inherit the date from the active table if it exists, otherwise use current time
+    const activeTable = activeTables.find(t => t.tableNumber === tableNumber || t.tableNumber === activeTableId);
+    let orderDate = activeTable && activeTable.createdAt ? activeTable.createdAt : new Date().toISOString();
 
     const newOrder: Order = {
       id: Date.now().toString(),
       orderNumber: nextOrderNumber,
-      date: new Date().toISOString(),
+      date: orderDate,
       customerName: '', // Customer name has been removed
       tableNumber,
       items: [...cart],
@@ -562,6 +567,7 @@ export default function App() {
 
     try {
       await batch.commit();
+      setOrderCounter(nextOrderNumber);
       setCompletedOrder(newOrder);
       clearCart();
       setActiveTableId(null);
