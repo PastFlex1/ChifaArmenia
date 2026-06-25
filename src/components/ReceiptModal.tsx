@@ -314,6 +314,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
                 <div className="text-center text-[10px] font-bold uppercase mt-6">
                   <p>¡Gracias por su preferencia!</p>
                   <p className="mt-1">ATENDIDO POR: {order.sellerName ? order.sellerName : 'CAJERO'}</p>
+                  <p className="mt-4 text-[8px] opacity-60">SIST. ELABORADO POR PALMA NEXUS SOLUTIONS</p>
                 </div>
               </>
             ) : (

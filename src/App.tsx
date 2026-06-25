@@ -579,6 +579,52 @@ export default function App() {
     }
   };
 
+  const handleFreeTableWithoutCheckout = async () => {
+    if (!activeTableId || isCheckingOut) return;
+    
+    const result = await Swal.fire({
+      title: '¿Liberar mesa sin cobrar?',
+      text: "Se cancelará el pedido actual y se devolverá el inventario. Esta acción no se puede deshacer.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#B91C1C',
+      cancelButtonColor: '#1A1A1A',
+      confirmButtonText: 'Sí, liberar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!result.isConfirmed) return;
+    
+    setIsCheckingOut(true);
+
+    try {
+      const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
+      const oldItems = previousTable ? previousTable.items : [];
+      
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, []);
+      
+      const batch = writeBatch(db);
+      newRawMaterials.forEach((rm, index) => {
+        if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+      });
+      newDrinks.forEach((drink, index) => {
+        if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+      });
+      batch.delete(doc(db, 'active_tables', activeTableId));
+      
+      await batch.commit();
+      Swal.fire({ title: 'Éxito', text: `Mesa ${activeTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
+      clearCart();
+      setActiveTableId(null);
+      setCurrentView('mesas');
+    } catch (e) {
+      console.error("Error freeing table:", e);
+      Swal.fire({ title: 'Error', text: 'Error al liberar la mesa.', icon: 'error', confirmButtonColor: '#000' });
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
   const handlePrintPreview = () => {
     if (cart.length === 0) return;
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
@@ -814,6 +860,10 @@ export default function App() {
           <button type="button" onClick={() => setShowLogoutConfirm(true)} className="bg-slate-100 p-3 rounded-xl border-2 border-black hover:bg-[#B91C1C] hover:text-white transition-colors cursor-pointer">
             <LogOut className="w-5 h-5 pointer-events-none" />
           </button>
+        </div>
+        
+        <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-2">
+          Elaborado por<br/><span className="text-[#B91C1C]">Palma Nexus Solutions</span>
         </div>
       </div>
 
@@ -1162,6 +1212,15 @@ export default function App() {
                 >
                   {isCheckingOut ? '...' : 'Cobrar y Liberar'}
                 </button>
+                {currentUser?.role === 'Administrador' && (
+                  <button
+                    onClick={handleFreeTableWithoutCheckout}
+                    disabled={isCheckingOut}
+                    className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  >
+                    {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
+                  </button>
+                )}
               </div>
             ) : (
               <button
@@ -1293,22 +1352,33 @@ export default function App() {
             </div>
             
             {activeTableId ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                >
-                  {isCheckingOut ? '...' : `Guardar M${activeTableId}`}
-                </button>
-                <button
-                  onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-widest shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                >
-                  {isCheckingOut ? '...' : 'Cobrar'}
-                </button>
-              </div>
+              <>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="flex-1 py-3 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  >
+                    {isCheckingOut ? '...' : `Guardar M${activeTableId}`}
+                  </button>
+                  <button
+                    onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-widest shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  >
+                    {isCheckingOut ? '...' : 'Cobrar'}
+                  </button>
+                </div>
+                {currentUser?.role === 'Administrador' && (
+                  <button
+                    onClick={() => { handleFreeTableWithoutCheckout(); setIsMobileCartOpen(false); }}
+                    disabled={isCheckingOut}
+                    className="w-full mt-2 py-3 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  >
+                    {isCheckingOut ? '...' : 'Liberar Sin Cobrar (Admin)'}
+                  </button>
+                )}
+              </>
             ) : (
               <button
                 onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
