@@ -248,7 +248,7 @@ export default function App() {
       if (activeCategory === 'Todos') {
         matchesCategory = true;
       } else if (activeCategory === 'Chaulafan y Arroz') {
-        matchesCategory = item.category === 'Chaulafan y Arroz' || item.category === 'Comidas';
+        matchesCategory = item.category === 'Chaulafan y Arroz';
       } else if (activeCategory === 'Bebidas') {
         matchesCategory = item.isDrink === true;
       } else {
