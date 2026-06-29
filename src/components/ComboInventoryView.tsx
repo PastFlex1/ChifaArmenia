@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Layers, Plus, Trash2, Edit2, Search, X } from 'lucide-react';
+import { Layers, Plus, Trash2, Edit2, Search, X, Download } from 'lucide-react';
+import { generateInventoryPDF } from '../utils/pdfGenerator';
 import { Category, Dish, Drink } from '../types';
 import { CustomSelect } from './CustomSelect';
 
@@ -115,6 +116,19 @@ export function ComboInventoryView({
   const filteredCombos = combos.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDownloadPDF = () => {
+    generateInventoryPDF({
+      title: 'Inventario de Combos',
+      filename: 'combos',
+      columns: ['Nombre', 'Precio', 'Items'],
+      data: filteredCombos.map(c => [
+        c.name,
+        `$${c.price.toFixed(2)}`,
+        c.items.map(i => `${i.quantity}x ${getItemName(i.itemId, i.type)}`).join(', ')
+      ])
+    });
+  };
 
   return (
     <div className="flex w-full h-full gap-4 overflow-y-auto xl:overflow-hidden flex-col xl:flex-row pb-[80px] xl:pb-0">
@@ -282,6 +296,13 @@ export function ComboInventoryView({
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <button 
+             onClick={handleDownloadPDF} 
+             className="bg-[#B91C1C] px-4 py-2 border-2 border-black rounded-xl text-white font-bold uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 shrink-0"
+             title="Descargar PDF"
+           >
+             <Download className="w-4 h-4" /> PDF
+           </button>
           <div className="bg-[#FFD700] px-3 py-1.5 rounded-lg border-2 border-black font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
             Total: {filteredCombos.length}
           </div>

@@ -20,6 +20,9 @@ export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
   const isPrintingRef = React.useRef(false);
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
 
+  const appliedIvaRate = order.ivaRate || 15;
+  const ivaDivisor = appliedIvaRate === 8 ? 1.08 : 1.15;
+
   const kitchenItems = order.items
     .filter(item => item.quantity > (item.printedQuantity || 0))
     .map(item => ({
@@ -291,19 +294,19 @@ export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
                 <div className="flex flex-col gap-1 mb-6 font-sans">
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">SUBTOTAL:</span>
-                    <span>{formatPrice(order.total / 1.15)}</span>
+                    <span>{formatPrice(order.total / ivaDivisor)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="uppercase">BASE 15%:</span>
-                    <span>{formatPrice(order.total / 1.15)}</span>
+                    <span className="uppercase">BASE {appliedIvaRate}%:</span>
+                    <span>{formatPrice(order.total / ivaDivisor)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">BASE 0%:</span>
                     <span>{formatPrice(0)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="uppercase">IVA 15%:</span>
-                    <span>{formatPrice(order.total - (order.total / 1.15))}</span>
+                    <span className="uppercase">IVA {appliedIvaRate}%:</span>
+                    <span>{formatPrice(order.total - (order.total / ivaDivisor))}</span>
                   </div>
                   <div className="flex justify-between items-end mt-2">
                     <span className="font-black uppercase tracking-widest text-sm">TOTAL:</span>

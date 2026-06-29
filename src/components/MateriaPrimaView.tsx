@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Package, Plus, Trash2, Edit2, Search, X } from 'lucide-react';
+import { Package, Plus, Trash2, Edit2, Search, X, Download } from 'lucide-react';
+import { generateInventoryPDF } from '../utils/pdfGenerator';
 import { RawMaterial } from '../types';
 import { CustomSelect } from './CustomSelect';
 
@@ -57,6 +58,21 @@ export function MateriaPrimaView({
   const filteredMaterials = rawMaterials.filter(m => 
     m.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDownloadPDF = () => {
+    generateInventoryPDF({
+      title: 'Inventario de Materias Primas',
+      filename: 'materias_primas',
+      columns: ['Nombre', 'Unidad', 'Costo Unit.', 'Stock', 'Costo Total'],
+      data: filteredMaterials.map(m => [
+        m.name,
+        m.unit,
+        `$${m.unitCost.toFixed(2)}`,
+        m.stock.toString(),
+        `$${(m.stock * m.unitCost).toFixed(2)}`
+      ])
+    });
+  };
 
   return (
     <div className="flex w-full h-full gap-4 overflow-y-auto xl:overflow-hidden flex-col xl:flex-row pb-[80px] xl:pb-0">
@@ -145,15 +161,24 @@ export function MateriaPrimaView({
       <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
            <h2 className="font-black uppercase tracking-widest italic shrink-0">Inventario Materias Primas</h2>
-           <div className="relative w-full max-w-md">
-             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
-             <input
-               type="text"
-               placeholder="Buscar ingrediente..."
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               className="w-full pl-10 pr-4 py-2 border-2 border-black rounded-xl font-bold text-sm text-black uppercase focus:outline-none focus:ring-2 focus:ring-white transition-all bg-white"
-             />
+           <div className="flex gap-2 w-full lg:w-auto">
+             <div className="relative flex-1 lg:w-64">
+               <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
+               <input
+                 type="text"
+                 placeholder="Buscar ingrediente..."
+                 value={searchTerm}
+                 onChange={(e) => setSearchTerm(e.target.value)}
+                 className="w-full pl-10 pr-4 py-2 border-2 border-black rounded-xl font-bold text-sm text-black uppercase focus:outline-none focus:ring-2 focus:ring-white transition-all bg-white"
+               />
+             </div>
+             <button 
+               onClick={handleDownloadPDF} 
+               className="bg-[#B91C1C] px-4 py-2 border-2 border-black rounded-xl font-bold uppercase text-xs shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 shrink-0"
+               title="Descargar PDF"
+             >
+               <Download className="w-4 h-4" /> PDF
+             </button>
            </div>
         </div>
         <div className="flex-1 p-6 overflow-y-auto bg-[#F7F4F0] scrollbar-hide">

@@ -1,4 +1,4 @@
-export type Category = 'Comidas' | 'Bebidas' | 'Bebidas Calientes' | 'Bebidas Frías' | 'Combos Familiares' | 'Combos Ideales' | 'Porciones';
+export type Category = 'Comidas' | 'Bebidas' | 'Bebidas Calientes' | 'Licor' | 'Combos Familiares' | 'Combos Ideales' | 'Porciones' | 'Salteados' | 'Plancha' | 'Especial';
 
 export type Role = 'Administrador' | 'Cajero' | 'Mesero';
 
@@ -38,6 +38,7 @@ export interface Order {
   total: number;
   totalCost: number;
   profit: number;
+  ivaRate?: number;
   sellerId?: string;
   sellerName?: string;
   status?: 'active' | 'voided';

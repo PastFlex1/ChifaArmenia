@@ -41,6 +41,8 @@ export default function App() {
   const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year' | 'custom'>('day');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [orderCounter, setOrderCounter] = useState<number>(0);
+  const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
+  const [cashReceived, setCashReceived] = useState<string>('');
 
   // Inventories State
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
@@ -381,6 +383,7 @@ export default function App() {
   const clearCart = () => {
     setCart([]);
     setTableNumber('');
+    setCashReceived('');
   };
 
   const cartTotal = useMemo(() => {
@@ -540,6 +543,7 @@ export default function App() {
       total: cartTotal,
       totalCost,
       profit,
+      ivaRate: isHolidayIva ? 8 : 15,
       sellerId: currentUser?.id,
       sellerName: currentUser?.name,
       status: 'active'
@@ -638,6 +642,7 @@ export default function App() {
       total: cartTotal,
       totalCost,
       profit: cartTotal - totalCost,
+      ivaRate: isHolidayIva ? 8 : 15,
       sellerId: currentUser?.id,
       sellerName: currentUser?.name,
       status: 'active'
@@ -1093,7 +1098,7 @@ export default function App() {
 
       {/* RIGHT PANEL - CART */}
       {currentView === 'pos' && (
-        <div className="w-[320px] xl:w-[380px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 flex flex-col hidden lg:flex overflow-hidden shrink-0">
+        <div className="w-[320px] xl:w-[380px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
         
         {/* Cart Header */}
         <div className="bg-[#B91C1C] text-white p-5 flex flex-col gap-1 z-10 shrink-0 border-b-2 border-black">
@@ -1166,18 +1171,42 @@ export default function App() {
 
         {/* Checkout Section */}
         <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
+          <div className="flex justify-between items-center mb-2">
+             <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
+                <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
+                Feriado (IVA 8%)
+             </label>
+          </div>
           <div className="flex justify-between mb-1 text-sm">
             <span className="opacity-60 font-bold uppercase">Subtotal</span>
-            <span className="font-bold">{formatPrice(cartTotal / 1.15)}</span>
+            <span className="font-bold">{formatPrice(cartTotal / (isHolidayIva ? 1.08 : 1.15))}</span>
           </div>
           <div className="flex justify-between mb-3 text-sm">
-            <span className="opacity-60 font-bold uppercase">IVA (15%)</span>
-            <span className="font-bold">{formatPrice(cartTotal - (cartTotal / 1.15))}</span>
+            <span className="opacity-60 font-bold uppercase">IVA ({isHolidayIva ? '8%' : '15%'})</span>
+            <span className="font-bold">{formatPrice(cartTotal - (cartTotal / (isHolidayIva ? 1.08 : 1.15)))}</span>
           </div>
-          <div className="flex justify-between items-end mb-6">
+          <div className="flex justify-between items-end mb-4">
             <span className="text-xs font-black uppercase tracking-widest">Total a Pagar</span>
             <span className="text-3xl font-black">{formatPrice(cartTotal)}</span>
           </div>
+          
+          <div className="flex justify-between items-center mb-2 gap-2">
+            <span className="text-xs font-bold uppercase opacity-80">Efectivo</span>
+            <input 
+              type="number" 
+              placeholder="0.00" 
+              className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]" 
+              value={cashReceived}
+              onChange={(e) => setCashReceived(e.target.value)}
+            />
+          </div>
+          
+          {parseFloat(cashReceived) > 0 && (
+            <div className="flex justify-between items-end mb-6">
+              <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
+              <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
+            </div>
+          )}
           
           <div className="flex gap-2">
             <button
@@ -1237,11 +1266,10 @@ export default function App() {
       )}
 
       {/* Floating Cart Button for Mobile */}
-      {currentView === 'pos' && (
+      {currentView === 'pos' && cart.length > 0 && !isMobileCartOpen && (
         <button 
           className="lg:hidden fixed bottom-[90px] right-6 w-16 h-16 bg-[#B91C1C] text-white rounded-full border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center z-40 active:translate-y-[2px] active:shadow-none transition-all"
           onClick={() => setIsMobileCartOpen(true)}
-          style={{ display: cart.length > 0 && !isMobileCartOpen ? 'flex' : 'none' }}
         >
           <div className="relative">
             <ShoppingBag className="w-6 h-6" />
@@ -1328,11 +1356,36 @@ export default function App() {
 
           {/* Checkout Section Mobile */}
           <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
+            <div className="flex justify-between items-center mb-3">
+               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
+                  <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
+                  Feriado (IVA 8%)
+               </label>
+            </div>
             <div className="flex justify-between items-end mb-4">
               <div className="flex flex-col">
                 <span className="opacity-60 text-[10px] font-bold uppercase">Total (Inc. IVA)</span>
                 <span className="text-2xl font-black">{formatPrice(cartTotal)}</span>
               </div>
+            </div>
+            
+            <div className="flex justify-between items-center mb-2 gap-2">
+              <span className="text-xs font-bold uppercase opacity-80">Efectivo</span>
+              <input 
+                type="number" 
+                placeholder="0.00" 
+                className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]" 
+                value={cashReceived}
+                onChange={(e) => setCashReceived(e.target.value)}
+              />
+            </div>
+            
+            {parseFloat(cashReceived) > 0 && (
+              <div className="flex justify-between items-end mb-4">
+                <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
+                <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
+              </div>
+            )}
               <div className="flex gap-2">
                 <button
                   onClick={clearCart}
@@ -1349,7 +1402,6 @@ export default function App() {
                   <Printer className="w-5 h-5 text-black" />
                 </button>
               </div>
-            </div>
             
             {activeTableId ? (
               <>
