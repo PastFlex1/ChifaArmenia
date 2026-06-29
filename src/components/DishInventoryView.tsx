@@ -19,7 +19,7 @@ export function DishInventoryView({
 }: DishInventoryViewProps) {
   const [formData, setFormData] = useState({
     name: '',
-    category: 'Comidas' as Category,
+    category: 'Chaulafan y Arroz' as Category,
     price: ''
   });
   
@@ -67,7 +67,7 @@ export function DishInventoryView({
       ingredients: currentIngredients,
     });
 
-    setFormData({ name: '', category: 'Comidas', price: '' });
+    setFormData({ name: '', category: 'Chaulafan y Arroz', price: '' });
     setCurrentIngredients([]);
     setEditingId(null);
   };
@@ -84,7 +84,7 @@ export function DishInventoryView({
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData({ name: '', category: 'Comidas', price: '' });
+    setFormData({ name: '', category: 'Chaulafan y Arroz', price: '' });
     setCurrentIngredients([]);
   };
 
@@ -128,7 +128,7 @@ export function DishInventoryView({
               <ChefHat className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Platillo' : 'Inv. Comida'}</h2>
+              <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Platillo' : 'Inv. Chaulafan y Arroz'}</h2>
               <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Platillo' : 'Recetas y Costos'}</span>
             </div>
           </div>

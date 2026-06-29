@@ -247,8 +247,8 @@ export default function App() {
       let matchesCategory = false;
       if (activeCategory === 'Todos') {
         matchesCategory = true;
-      } else if (activeCategory === 'Comidas') {
-        matchesCategory = !item.isDrink && !item.isCombo;
+      } else if (activeCategory === 'Chaulafan y Arroz') {
+        matchesCategory = item.category === 'Chaulafan y Arroz' || item.category === 'Comidas';
       } else if (activeCategory === 'Bebidas') {
         matchesCategory = item.isDrink === true;
       } else {
@@ -808,7 +808,7 @@ export default function App() {
                 currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
-              <ChefHat className="w-5 h-5" /> Inv. Comida
+              <ChefHat className="w-5 h-5" /> Inv. Chaulafan y Arroz
             </button>
           )}
           {canView('inv_bebidas') && (
@@ -1467,7 +1467,7 @@ export default function App() {
         {canView('inv_comida') && (
            <button onClick={() => setCurrentView('inv_comida')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_comida' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
              <ChefHat className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Comida</span>
+             <span className="text-[9px] font-black uppercase tracking-wider">Chaulafan y Arroz</span>
            </button>
         )}
         {canView('inv_bebidas') && (
