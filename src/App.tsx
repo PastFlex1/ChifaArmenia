@@ -750,11 +750,8 @@ export default function App() {
         <WelcomeModal user={currentUser} onClose={() => setShowWelcome(false)} />
       )}
       
-      {/* =========================================
-          LEFT SIDEBAR (DESKTOP)
-          ========================================= */}
-      <div className="hidden lg:flex lg:w-[220px] xl:w-[260px] flex-col shrink-0 gap-4 h-full z-10">
-        <div className="bg-[#B91C1C] text-white p-5 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-[220px] xl:w-[260px] flex-col shrink-0 gap-2 h-full z-10">
+        <div className="bg-[#B91C1C] text-white p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
           <div className="flex flex-col z-10">
             <span className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Restaurante</span>
             <h1 className="text-3xl font-black italic uppercase leading-tight">Chifa <br/>Mei Hua</h1>
@@ -765,7 +762,7 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
+        <nav className="flex-1 bg-white p-2 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
           {canView('mesas') && (
             <button
               onClick={() => setCurrentView('mesas')}
@@ -808,7 +805,7 @@ export default function App() {
                 currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
               }`}
             >
-              <ChefHat className="w-5 h-5" /> Inv. Chaulafan y Arroz
+              <ChefHat className="w-5 h-5" /> Inv. Comidas
             </button>
           )}
           {canView('inv_bebidas') && (
@@ -832,7 +829,7 @@ export default function App() {
             </button>
           )}
           
-          <div className="my-1 border-b-2 border-dashed border-slate-200"></div>
+          <div className="my-0.5 border-b border-dashed border-slate-200"></div>
 
           {canView('ventas') && (
             <button
@@ -856,7 +853,7 @@ export default function App() {
           )}
         </nav>
 
-        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex items-center justify-between">
+        <div className="bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-[10px] uppercase font-black opacity-50">Sesión Actual</span>
             <span className="text-xs font-bold truncate max-w-[120px]">{currentUser.name}</span>
@@ -867,7 +864,7 @@ export default function App() {
           </button>
         </div>
         
-        <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-2">
+        <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-1">
           Elaborado por<br/><span className="text-[#B91C1C]">Palma Nexus Solutions</span>
         </div>
       </div>
@@ -930,7 +927,7 @@ export default function App() {
                         : 'bg-white hover:bg-slate-100 text-slate-800'
                     }`}
                   >
-                    {category}
+                    {category === 'Especial' ? 'Platos Especiales' : category}
                   </button>
                 ))}
               </div>
@@ -967,7 +964,7 @@ export default function App() {
                         <h3 className={`font-black text-sm lg:text-base leading-tight uppercase transition-colors line-clamp-2 ${!isOutOfStock && 'group-hover:text-black'}`}>
                           {item.name}
                         </h3>
-                        <span className="text-[10px] font-bold uppercase opacity-50 mt-1 block">{item.category}</span>
+                        <span className="text-[10px] font-bold uppercase opacity-50 mt-1 block">{item.category === 'Especial' ? 'Platos Especiales' : item.category}</span>
                       </div>
                       <div className="flex justify-between items-end mt-4">
                         <span className="text-xl font-black">
@@ -1071,6 +1068,7 @@ export default function App() {
               combos={combos}
               dishes={dishes}
               drinks={drinks}
+              rawMaterials={rawMaterials}
               onAddCombo={async (c) => await setDoc(doc(db, 'combos', c.id), c)}
               onDeleteCombo={async (id) => await deleteDoc(doc(db, 'combos', id))}
             />
@@ -1467,7 +1465,7 @@ export default function App() {
         {canView('inv_comida') && (
            <button onClick={() => setCurrentView('inv_comida')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_comida' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
              <ChefHat className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Chaulafan y Arroz</span>
+             <span className="text-[9px] font-black uppercase tracking-wider">Comidas</span>
            </button>
         )}
         {canView('inv_bebidas') && (

@@ -22,6 +22,7 @@ interface ComboInventoryViewProps {
   combos: Combo[];
   dishes: Dish[];
   drinks: Drink[];
+  rawMaterials: import('../types').RawMaterial[];
   onAddCombo: (combo: Combo) => void;
   onDeleteCombo: (id: string) => void;
 }
@@ -30,6 +31,7 @@ export function ComboInventoryView({
   combos,
   dishes,
   drinks,
+  rawMaterials,
   onAddCombo,
   onDeleteCombo
 }: ComboInventoryViewProps) {
@@ -113,6 +115,29 @@ export function ComboInventoryView({
     return drinks.find(d => d.id === id)?.name || 'Bebida desconocida';
   };
 
+  const calculateComboCost = (items: ComboItem[]) => {
+    let comboCost = 0;
+    items.forEach(cItem => {
+      if (cItem.type === 'dish') {
+        const dish = dishes.find(d => d.id === cItem.itemId);
+        if (dish && dish.ingredients) {
+          dish.ingredients.forEach(ing => {
+            const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+            if (rm) {
+              comboCost += ing.quantity * rm.unitCost * cItem.quantity;
+            }
+          });
+        }
+      } else if (cItem.type === 'drink') {
+        const dr = drinks.find(drink => drink.id === cItem.itemId);
+        if (dr) {
+          comboCost += dr.unitCost * cItem.quantity;
+        }
+      }
+    });
+    return comboCost;
+  };
+
   const filteredCombos = combos.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -121,9 +146,10 @@ export function ComboInventoryView({
     generateInventoryPDF({
       title: 'Inventario de Combos',
       filename: 'combos',
-      columns: ['Nombre', 'Precio', 'Items'],
+      columns: ['Nombre', 'Costo', 'Precio', 'Items'],
       data: filteredCombos.map(c => [
         c.name,
+        `$${calculateComboCost(c.items).toFixed(2)}`,
         `$${c.price.toFixed(2)}`,
         c.items.map(i => `${i.quantity}x ${getItemName(i.itemId, i.type)}`).join(', ')
       ])
@@ -164,9 +190,9 @@ export function ComboInventoryView({
                 <label className="block text-xs font-black uppercase mb-1">Categoría</label>
                 <div className="shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl">
                   <CustomSelect
-                    value={formData.category}
-                    onChange={val => setFormData({...formData, category: val as Category | 'Combos'})}
-                    options={['Combos Familiares', 'Combos Ideales', 'Porciones', 'Chaulafan y Arroz', 'Tallarines y Mixto', 'Bebidas']}
+                    value={formData.category === 'Especial' ? 'Platos Especiales' : formData.category}
+                    onChange={val => setFormData({...formData, category: (val === 'Platos Especiales' ? 'Especial' : val) as Category | 'Combos'})}
+                    options={['Combos Familiares', 'Combos Ideales', 'Porciones', 'Chaulafan y Arroz', 'Tallarines y Mixto', 'Bebidas', 'Salteados', 'Plancha', 'Platos Especiales']}
                   />
                 </div>
               </div>
@@ -296,15 +322,17 @@ export function ComboInventoryView({
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button 
-             onClick={handleDownloadPDF} 
-             className="bg-[#B91C1C] px-4 py-2 border-2 border-black rounded-xl text-white font-bold uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 shrink-0"
-             title="Descargar PDF"
-           >
-             <Download className="w-4 h-4" /> PDF
-           </button>
-          <div className="bg-[#FFD700] px-3 py-1.5 rounded-lg border-2 border-black font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-            Total: {filteredCombos.length}
+          <div className="flex items-center gap-2">
+            <button 
+               onClick={handleDownloadPDF} 
+               className="bg-[#B91C1C] px-4 py-2 border-2 border-black rounded-xl text-white font-bold uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 shrink-0"
+               title="Descargar PDF"
+             >
+               <Download className="w-4 h-4" /> PDF
+             </button>
+            <div className="bg-[#FFD700] px-3 py-1.5 rounded-lg border-2 border-black font-black text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              Total: {filteredCombos.length}
+            </div>
           </div>
         </div>
 
@@ -316,11 +344,16 @@ export function ComboInventoryView({
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h3 className="font-black uppercase leading-tight line-clamp-1 text-lg">{combo.name}</h3>
-                      <span className="text-[10px] font-bold uppercase opacity-50 bg-slate-100 px-2 py-0.5 rounded-full border border-black/20 mt-1 inline-block">{combo.category}</span>
+                      <span className="text-[10px] font-bold uppercase opacity-50 bg-slate-100 px-2 py-0.5 rounded-full border border-black/20 mt-1 inline-block">{combo.category === 'Especial' ? 'Platos Especiales' : combo.category}</span>
                     </div>
-                    <span className="text-xl font-black bg-[#FFD700] px-2 py-1 rounded-lg border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                      {formatPrice(combo.price)}
-                    </span>
+                    <div className="flex flex-col items-end">
+                       <span className="text-xl font-black bg-[#FFD700] px-2 py-1 rounded-lg border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                         {formatPrice(combo.price)}
+                       </span>
+                       <span className="text-[10px] uppercase font-black opacity-50 mt-1 text-right">
+                         Costo: {formatPrice(calculateComboCost(combo.items))}
+                       </span>
+                    </div>
                   </div>
                   
                   <div className="mt-3 bg-slate-50 p-2 rounded-lg border-2 border-black/10">

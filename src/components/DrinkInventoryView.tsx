@@ -209,10 +209,14 @@ export function DrinkInventoryView({
                        </button>
                      </div>
                    </div>
-                   <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
+                   <div className="grid grid-cols-3 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
                      <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Stock Total</span>
-                       <span className="font-black text-lg">{item.stock} <span className="text-sm opacity-60">und</span></span>
+                       <span className="block text-[10px] uppercase font-bold opacity-50">Stock</span>
+                       <span className="font-black text-lg">{item.stock} <span className="text-sm opacity-60">u</span></span>
+                     </div>
+                     <div>
+                       <span className="block text-[10px] uppercase font-bold opacity-50">Costo</span>
+                       <span className="font-black text-lg block mt-1 text-slate-600">{formatPrice(item.unitCost)}</span>
                      </div>
                      <div>
                        <span className="block text-[10px] uppercase font-bold opacity-50">Precio Venta</span>

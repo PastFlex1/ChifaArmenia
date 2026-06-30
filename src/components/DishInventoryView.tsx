@@ -111,7 +111,7 @@ export function DishInventoryView({
       columns: ['Nombre', 'Categoría', 'Precio Venta', 'Costo Receta'],
       data: filteredDishes.map(d => [
         d.name,
-        d.category,
+        d.category === 'Especial' ? 'Platos Especiales' : d.category,
         `$${d.price.toFixed(2)}`,
         `$${calculateCost(d.ingredients).toFixed(2)}`
       ])
@@ -128,7 +128,7 @@ export function DishInventoryView({
               <ChefHat className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Platillo' : 'Inv. Chaulafan y Arroz'}</h2>
+              <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Platillo' : 'Inv. Comidas'}</h2>
               <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Platillo' : 'Recetas y Costos'}</span>
             </div>
           </div>
@@ -143,7 +143,23 @@ export function DishInventoryView({
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-black uppercase opacity-60">Categoría</label>
+                <select
+                  value={formData.category}
+                  onChange={e => setFormData({ ...formData, category: e.target.value as Category })}
+                  className="w-full px-4 py-3 border-2 border-black rounded-xl font-bold uppercase text-sm focus:outline-none focus:ring-2 focus:ring-[#FFD700] transition-all bg-[#F7F4F0]"
+                >
+                  <option value="Chaulafan y Arroz">Chaulafan y Arroz</option>
+                  <option value="Tallarines y Mixto">Tallarines y Mixto</option>
+                  <option value="Porciones">Porciones</option>
+                  <option value="Salteados">Salteados</option>
+                  <option value="Plancha">Plancha</option>
+                  <option value="Especial">Platos Especiales</option>
+                </select>
+              </div>
+
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-black uppercase opacity-60">Precio Venta (USD/)</label>
                 <input
@@ -289,6 +305,9 @@ export function DishInventoryView({
                 <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
                    <div className="flex justify-between items-start">
                      <div>
+                       <span className="inline-block px-2 py-0.5 bg-[#FFD700]/20 text-black border border-black/25 rounded text-[9px] font-black uppercase tracking-wider mb-1">
+                         {item.category === 'Especial' ? 'Platos Especiales' : item.category}
+                       </span>
                        <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
                      </div>
                      <div className="flex gap-2 shrink-0 ml-2">
