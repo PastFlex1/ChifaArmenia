@@ -192,7 +192,7 @@ export function ComboInventoryView({
                   <CustomSelect
                     value={formData.category === 'Especial' ? 'Platos Especiales' : formData.category}
                     onChange={val => setFormData({...formData, category: (val === 'Platos Especiales' ? 'Especial' : val) as Category | 'Combos'})}
-                    options={['Combos Familiares', 'Combos Ideales', 'Porciones', 'Chaulafan y Arroz', 'Tallarines y Mixto', 'Bebidas', 'Salteados', 'Plancha', 'Platos Especiales']}
+                    options={['Combos Familiares', 'Combos Ideales', 'Cremas y Sopas', 'Porciones', 'Chaulafan y Arroz', 'Tallarines y Mixto', 'Bebidas', 'Salteados', 'Plancha', 'Platos Especiales']}
                   />
                 </div>
               </div>
