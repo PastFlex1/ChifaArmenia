@@ -1148,9 +1148,11 @@ export default function App() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                         <div className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity">
-                          <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
-                            {item.quantity === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-                          </button>
+                          {(currentUser?.role === 'Administrador' || item.quantity > 1) && (
+                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
+                              {item.quantity === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                            </button>
+                          )}
                           <button onClick={() => updateQuantity(item.id, 1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
                             <Plus className="w-3 h-3" />
                           </button>
@@ -1207,14 +1209,16 @@ export default function App() {
           )}
           
           <div className="flex gap-2">
-            <button
-              onClick={clearCart}
-              disabled={cart.length === 0 || isCheckingOut}
-              className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-              title="Limpiar Orden"
-            >
-              <Trash2 className="w-5 h-5 text-[#B91C1C]" />
-            </button>
+            {currentUser?.role === 'Administrador' && (
+              <button
+                onClick={clearCart}
+                disabled={cart.length === 0 || isCheckingOut}
+                className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                title="Limpiar Orden"
+              >
+                <Trash2 className="w-5 h-5 text-[#B91C1C]" />
+              </button>
+            )}
             <button
               onClick={handlePrintPreview}
               disabled={cart.length === 0 || isCheckingOut}
@@ -1333,9 +1337,11 @@ export default function App() {
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs opacity-60 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                           <div className="flex items-center gap-1 opacity-80">
-                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
-                              {item.quantity === 1 ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-                            </button>
+                            {(currentUser?.role === 'Administrador' || item.quantity > 1) && (
+                              <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
+                                {item.quantity === 1 ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                              </button>
+                            )}
                             <button onClick={() => updateQuantity(item.id, 1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
                               <Plus className="w-4 h-4" />
                             </button>
@@ -1385,13 +1391,15 @@ export default function App() {
               </div>
             )}
               <div className="flex gap-2">
-                <button
-                  onClick={clearCart}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
-                >
-                  <Trash2 className="w-5 h-5 text-[#B91C1C]" />
-                </button>
+                {currentUser?.role === 'Administrador' && (
+                  <button
+                    onClick={clearCart}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
+                  >
+                    <Trash2 className="w-5 h-5 text-[#B91C1C]" />
+                  </button>
+                )}
                 <button
                   onClick={handlePrintPreview}
                   disabled={cart.length === 0 || isCheckingOut}

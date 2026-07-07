@@ -1,4 +1,4 @@
-export type Category = 'Chaulafan y Arroz' | 'Tallarines y Mixto' | 'Bebidas' | 'Bebidas Calientes' | 'Licor' | 'Combos Familiares' | 'Combos Ideales' | 'Porciones' | 'Salteados' | 'Plancha' | 'Especial' | 'Cremas y Sopas';
+export type Category = 'Chaulafan y Arroz' | 'Tallarines y Mixto' | 'Bebidas' | 'Bebidas Calientes' | 'Licor' | 'Combos Familiares' | 'Combos Ideales' | 'Porciones' | 'Salteados' | 'Plancha' | 'Especial' | 'Cremas y Sopas' | 'Jugos' | 'Apanados' | 'Entradas';
 
 export type Role = 'Administrador' | 'Cajero' | 'Mesero';
 

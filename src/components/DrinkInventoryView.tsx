@@ -52,7 +52,7 @@ export function DrinkInventoryView({
       stock: item.stock.toString(),
       unitCost: item.unitCost.toString(),
       price: item.price.toString(),
-      category: (item.category === 'Bebidas Calientes' || item.category === 'Licor') ? item.category : 'Licor'
+      category: (item.category === 'Bebidas Calientes' || item.category === 'Licor' || item.category === 'Jugos' || item.category === 'Bebidas') ? item.category : 'Licor'
     });
   };
 
@@ -116,6 +116,8 @@ export function DrinkInventoryView({
               >
                 <option value="Licor">Licor</option>
                 <option value="Bebidas Calientes">Bebidas Calientes</option>
+                <option value="Bebidas">Bebidas</option>
+                <option value="Jugos">Jugos</option>
               </select>
             </div>
             

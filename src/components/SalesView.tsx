@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Order, UserAccount } from '../types';
-import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban } from 'lucide-react';
+import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { generateInventoryPDF } from '../utils/pdfGenerator';
 
 interface SalesViewProps {
   orders: Order[];
@@ -17,7 +18,7 @@ interface SalesViewProps {
 
 export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const sellers = useMemo(() => {
@@ -129,6 +130,43 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
 
     return Array.from(dataByDate.values());
   }, [filteredOrders, timeRange, validOrders]);
+
+  const productSummary = useMemo(() => {
+    const summary = new Map<string, { name: string, category: string, quantity: number, total: number }>();
+    
+    validOrders.forEach(order => {
+      order.items.forEach(item => {
+        const id = item.menuItem.id;
+        if (!summary.has(id)) {
+          summary.set(id, {
+            name: item.menuItem.name,
+            category: item.menuItem.category,
+            quantity: 0,
+            total: 0
+          });
+        }
+        const existing = summary.get(id)!;
+        existing.quantity += item.quantity;
+        existing.total += item.quantity * item.menuItem.price;
+      });
+    });
+
+    return Array.from(summary.values()).sort((a, b) => b.quantity - a.quantity);
+  }, [validOrders]);
+
+  const handleDownloadSummaryPDF = () => {
+    generateInventoryPDF({
+      title: 'Resumen de Productos Vendidos',
+      filename: 'resumen_ventas',
+      columns: ['Producto', 'Categoría', 'Cant. Vendida', 'Ingreso Total'],
+      data: productSummary.map(item => [
+        item.name,
+        item.category,
+        item.quantity.toString(),
+        `$${item.total.toFixed(2)}`
+      ])
+    });
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
@@ -286,7 +324,24 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
               >
                 <BarChartIcon className="w-4 h-4" /> Gráfica
               </button>
+              <button
+                onClick={() => setViewMode('summary')}
+                className={`flex-1 sm:flex-none px-4 py-1.5 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 transition-colors ${
+                  viewMode === 'summary' ? 'bg-[#FFD700] border-2 border-black' : 'hover:bg-slate-50 border-2 border-transparent opacity-60'
+                }`}
+              >
+                <Package className="w-4 h-4" /> Resumen
+              </button>
             </div>
+            {viewMode === 'summary' && (
+              <button 
+                onClick={handleDownloadSummaryPDF} 
+                className="bg-[#B91C1C] px-4 py-2 text-white border-2 border-black rounded-xl font-bold uppercase text-xs shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 shrink-0"
+                title="Descargar PDF"
+              >
+                <Download className="w-4 h-4" /> PDF
+              </button>
+            )}
           </div>
         </div>
 
@@ -295,6 +350,29 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
             <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 opacity-30">
               <FileText className="w-16 h-16 stroke-1" />
               <p className="text-sm font-bold uppercase text-center">No hay ventas<br />registradas aún</p>
+            </div>
+          ) : viewMode === 'summary' ? (
+            <div className="w-full">
+              <table className="w-full text-left border-spacing-0" style={{ borderCollapse: 'separate' }}>
+                <thead className="sticky top-[-12px] sm:top-[-16px] z-20">
+                  <tr className="bg-white">
+                    <th className="p-3 border-b-2 border-black font-black uppercase text-xs whitespace-nowrap shadow-[0_2px_0_0_rgba(0,0,0,1)]">Producto</th>
+                    <th className="p-3 border-b-2 border-black font-black uppercase text-xs whitespace-nowrap hidden sm:table-cell shadow-[0_2px_0_0_rgba(0,0,0,1)]">Categoría</th>
+                    <th className="p-3 border-b-2 border-black font-black uppercase text-xs text-right whitespace-nowrap shadow-[0_2px_0_0_rgba(0,0,0,1)]">Cant.</th>
+                    <th className="p-3 border-b-2 border-black font-black uppercase text-xs text-right whitespace-nowrap shadow-[0_2px_0_0_rgba(0,0,0,1)]">Ingreso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productSummary.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-3 font-bold text-sm uppercase border-b-2 border-black/10 bg-inherit">{item.name}</td>
+                      <td className="p-3 font-bold text-sm uppercase opacity-60 hidden sm:table-cell border-b-2 border-black/10 bg-inherit">{item.category}</td>
+                      <td className="p-3 font-bold text-sm uppercase text-right border-b-2 border-black/10 bg-inherit">{item.quantity}</td>
+                      <td className="p-3 font-black text-sm uppercase text-right text-[#FFD700] drop-shadow-[1px_1px_0_rgba(0,0,0,1)] border-b-2 border-black/10 bg-inherit">${item.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : viewMode === 'chart' ? (
             <div className="h-full min-h-[300px] w-full pt-4">

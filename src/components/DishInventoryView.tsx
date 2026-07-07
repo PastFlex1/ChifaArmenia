@@ -157,6 +157,9 @@ export function DishInventoryView({
                   <option value="Salteados">Salteados</option>
                   <option value="Plancha">Plancha</option>
                   <option value="Especial">Platos Especiales</option>
+                  <option value="Apanados">Apanados</option>
+                  <option value="Entradas">Entradas</option>
+                  <option value="Cremas y Sopas">Cremas y Sopas</option>
                 </select>
               </div>
 
