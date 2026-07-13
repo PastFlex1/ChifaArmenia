@@ -1148,7 +1148,7 @@ export default function App() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                         <div className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity">
-                          {(currentUser?.role === 'Administrador' || item.quantity > 1) && (
+                          {currentUser?.role === 'Administrador' && (
                             <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
                               {item.quantity === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                             </button>
@@ -1337,7 +1337,7 @@ export default function App() {
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs opacity-60 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                           <div className="flex items-center gap-1 opacity-80">
-                            {(currentUser?.role === 'Administrador' || item.quantity > 1) && (
+                            {currentUser?.role === 'Administrador' && (
                               <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
                                 {item.quantity === 1 ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
                               </button>
