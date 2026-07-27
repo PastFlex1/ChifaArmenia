@@ -460,7 +460,8 @@ export default function App() {
 
     const handleSaveTable = async (customCart?: CartItem[] | any) => {
       const itemsToSave = Array.isArray(customCart) ? customCart : cart;
-      if (itemsToSave.length === 0 || !activeTableId || isCheckingOut) return;
+      if (!activeTableId || isCheckingOut) return;
+      if (itemsToSave.length === 0 && !activeTableId) return;
       setIsCheckingOut(true);
       
       const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
@@ -485,11 +486,24 @@ export default function App() {
       newDrinks.forEach((drink, index) => {
         if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
       });
-      batch.set(doc(db, 'active_tables', activeTableId), tableOrder);
+      if (itemsToSave.length === 0) {
+        if (activeTableId) batch.delete(doc(db, 'active_tables', activeTableId));
+      } else {
+        const tableOrder: TableOrder = {
+          id: activeTableId,
+          tableNumber: activeTableId,
+          items: [...itemsToSave],
+          createdAt: previousTable ? previousTable.createdAt : new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          sellerId: currentUser?.id,
+          sellerName: currentUser?.name
+        };
+        batch.set(doc(db, 'active_tables', activeTableId), tableOrder);
+      }
 
       try {
         await batch.commit();
-        Swal.fire({ title: 'Éxito', text: `Mesa ${activeTableId} guardada correctamente.`, icon: 'success', timer: 1500, showConfirmButton: false });
+        Swal.fire({ title: 'Éxito', text: itemsToSave.length === 0 ? `Mesa ${activeTableId} liberada.` : `Mesa ${activeTableId} guardada correctamente.`, icon: 'success', timer: 1500, showConfirmButton: false });
         clearCart();
         setActiveTableId(null);
         setCurrentView('mesas');
@@ -1231,7 +1245,7 @@ export default function App() {
               <div className="flex flex-col gap-2 flex-1">
                 <button
                   onClick={handleSaveTable}
-                  disabled={cart.length === 0 || isCheckingOut}
+                  disabled={isCheckingOut}
                   className="w-full py-2 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-[#FFD700] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                 >
                   {isCheckingOut ? '...' : `Guardar en Mesa ${activeTableId}`}
@@ -1414,7 +1428,7 @@ export default function App() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
-                    disabled={cart.length === 0 || isCheckingOut}
+                    disabled={isCheckingOut}
                     className="flex-1 py-3 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                   >
                     {isCheckingOut ? '...' : `Guardar M${activeTableId}`}
