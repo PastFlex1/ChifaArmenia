@@ -1210,16 +1210,9 @@ export default function App() {
               {cart.map((item) => (
                 <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                   <div className="flex items-center gap-3">
-                    <input 
-                      type="number" 
-                      step="any"
-                      min="0"
-                      readOnly={currentUser?.role !== 'Administrador'}
-                      className={`font-black text-[#B91C1C] text-lg w-16 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button ${currentUser?.role !== 'Administrador' ? 'cursor-not-allowed select-none' : ''}`}
-                      value={item.quantity}
-                      onChange={(e) => updateQuantityExact(item.id, e.target.value)}
-                      onBlur={() => handleBlurQuantity(item.id)}
-                    />
+                    <span className="font-black text-[#B91C1C] text-lg min-w-[2rem] text-center select-none">
+                      {item.quantity}
+                    </span>
                     <div className="flex flex-col">
                       <span className="font-bold text-sm uppercase leading-tight">{item.menuItem.name}</span>
                       <div className="flex items-center gap-2 mt-1">
@@ -1400,16 +1393,9 @@ export default function App() {
                 {cart.map((item) => (
                   <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                     <div className="flex items-center gap-3">
-                      <input 
-                        type="number" 
-                        step="any"
-                        min="0"
-                        readOnly={currentUser?.role !== 'Administrador'}
-                        className={`font-black text-[#B91C1C] text-xl w-20 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button ${currentUser?.role !== 'Administrador' ? 'cursor-not-allowed select-none' : ''}`}
-                        value={item.quantity}
-                        onChange={(e) => updateQuantityExact(item.id, e.target.value)}
-                        onBlur={() => handleBlurQuantity(item.id)}
-                      />
+                      <span className="font-black text-[#B91C1C] text-xl min-w-[2.5rem] text-center select-none">
+                        {item.quantity}
+                      </span>
                       <div className="flex flex-col">
                         <span className="font-bold text-sm uppercase leading-tight line-clamp-2">{item.menuItem.name}</span>
                         <div className="flex items-center gap-3 mt-1">
