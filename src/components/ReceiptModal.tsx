@@ -12,9 +12,10 @@ interface Props {
   order: Order;
   onClose: () => void;
   onKitchenPrint?: () => void;
+  onConfirmCheckout?: () => void;
 }
 
-export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
+export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout }: Props) {
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
   const [isPrinting, setIsPrinting] = useState(false);
   const isPrintingRef = React.useRef(false);
@@ -192,6 +193,28 @@ export function ReceiptModal({ order, onClose, onKitchenPrint }: Props) {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {order.id.startsWith('preview-') && (
+          <div className="bg-amber-100 border-b-2 border-black p-3 text-center print:hidden shrink-0">
+            <span className="text-xs font-black text-amber-900 uppercase block">
+              ⚠️ PRE-CUENTA / BORRADOR
+            </span>
+            <span className="text-[10px] font-bold text-amber-800 uppercase block mt-0.5">
+              Esta nota de venta aún NO ha sido cobrada ni registrada en el sistema.
+            </span>
+            {onConfirmCheckout && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onConfirmCheckout();
+                }}
+                className="mt-2 w-full py-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] hover:bg-[#B91C1C] hover:text-white transition-colors cursor-pointer"
+              >
+                🟢 COBRAR Y REGISTRAR VENTA EN SISTEMA
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tabs - Hidden in Print */}
         <div className="flex bg-white border-b-2 border-black print:hidden shrink-0">

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff } from 'lucide-react';
 import { CATEGORIES } from './data';
 import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -49,6 +49,22 @@ export default function App() {
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [drinks, setDrinks] = useState<Drink[]>([]);
   const [combos, setCombos] = useState<any[]>([]);
+
+  // Network Connection Monitor (Offline-First)
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
@@ -337,6 +353,15 @@ export default function App() {
   };
 
   const updateQuantity = (id: string, delta: number) => {
+    if (delta < 0 && currentUser?.role !== 'Administrador') {
+      Swal.fire({
+        title: 'Acción Restringida',
+        text: 'Solo el Administrador está autorizado para reducir o eliminar productos de la nota de venta.',
+        icon: 'warning',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
     setCart((prev) => prev.map((item) => {
       if (item.id === id) {
         const newQuantity = Math.max(0, item.quantity + delta);
@@ -356,7 +381,19 @@ export default function App() {
   const updateQuantityExact = (id: string, newQuantity: number | string) => {
     setCart((prev) => prev.map((item) => {
       if (item.id === id) {
-        if (newQuantity === '') return { ...item, quantity: '' as any }; // Permitir borrar temporalmente
+        if (currentUser?.role !== 'Administrador') {
+          const numQty = parseFloat(newQuantity as string);
+          if (isNaN(numQty) || numQty < item.quantity) {
+            Swal.fire({
+              title: 'Acción Restringida',
+              text: 'Solo el Administrador está autorizado para reducir o eliminar productos de la nota de venta.',
+              icon: 'warning',
+              confirmButtonColor: '#B91C1C'
+            });
+            return item;
+          }
+        }
+        if (newQuantity === '') return { ...item, quantity: '' as any }; // Permitir borrar temporalmente solo si admin
         const numQty = parseFloat(newQuantity as string);
         if (isNaN(numQty) || numQty < 0) return item;
         
@@ -543,9 +580,8 @@ export default function App() {
     const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
     const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
 
-    // Inherit the date from the active table if it exists, otherwise use current time
-    const activeTable = activeTables.find(t => t.tableNumber === tableNumber || t.tableNumber === activeTableId);
-    let orderDate = activeTable && activeTable.createdAt ? activeTable.createdAt : new Date().toISOString();
+    // Always record the exact moment of payment/checkout as the sale date
+    const orderDate = new Date().toISOString();
 
     const newOrder: Order = {
       id: Date.now().toString(),
@@ -867,15 +903,33 @@ export default function App() {
           )}
         </nav>
 
-        <div className="bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase font-black opacity-50">Sesión Actual</span>
-            <span className="text-xs font-bold truncate max-w-[120px]">{currentUser.name}</span>
-            <span className="text-[10px] font-bold text-[#B91C1C] uppercase mt-0.5">{currentUser.role}</span>
+        <div className="bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase font-black opacity-50">Sesión Actual</span>
+              <span className="text-xs font-bold truncate max-w-[120px]">{currentUser.name}</span>
+              <span className="text-[10px] font-bold text-[#B91C1C] uppercase mt-0.5">{currentUser.role}</span>
+            </div>
+            <button type="button" onClick={() => setShowLogoutConfirm(true)} className="bg-slate-100 p-3 rounded-xl border-2 border-black hover:bg-[#B91C1C] hover:text-white transition-colors cursor-pointer">
+              <LogOut className="w-5 h-5 pointer-events-none" />
+            </button>
           </div>
-          <button type="button" onClick={() => setShowLogoutConfirm(true)} className="bg-slate-100 p-3 rounded-xl border-2 border-black hover:bg-[#B91C1C] hover:text-white transition-colors cursor-pointer">
-            <LogOut className="w-5 h-5 pointer-events-none" />
-          </button>
+
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-black font-black text-[10px] uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${
+            isOnline ? 'bg-emerald-100 text-emerald-900 border-emerald-950' : 'bg-amber-100 text-amber-900 border-amber-950 animate-pulse'
+          }`}>
+            {isOnline ? (
+              <>
+                <Wifi className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="truncate">Conectado (Offline-First)</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-4 h-4 text-amber-700 shrink-0" />
+                <span className="truncate">Sin red (Caché local)</span>
+              </>
+            )}
+          </div>
         </div>
         
         <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-1">
@@ -890,7 +944,15 @@ export default function App() {
         <div className="bg-[#B91C1C] text-white p-3 rounded-xl flex justify-between items-center border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
           <div className="flex flex-col z-10">
             <h1 className="text-xl font-black italic uppercase leading-none">Chifa Mei Hua</h1>
-            <span className="text-[#FFD700] text-[10px] font-black uppercase tracking-widest mt-1">Sistema {currentUser.role}</span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[#FFD700] text-[10px] font-black uppercase tracking-widest">Sistema {currentUser.role}</span>
+              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border border-black uppercase flex items-center gap-1 ${
+                isOnline ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black animate-pulse'
+              }`}>
+                {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                {isOnline ? 'En Línea' : 'Offline'}
+              </span>
+            </div>
           </div>
           <button type="button" onClick={() => setShowLogoutConfirm(true)} className="z-20 bg-black/30 p-3 rounded-lg text-white hover:text-[#FFD700] transition-colors cursor-pointer active:bg-black/50">
             <LogOut className="w-5 h-5 pointer-events-none" />
@@ -1028,7 +1090,7 @@ export default function App() {
             />
           ) : currentView === 'ventas' ? (
             <SalesView 
-              orders={currentUser?.role === 'Administrador' ? orders : orders.filter(o => o.sellerId === currentUser?.id)}
+              orders={orders}
               currentUser={currentUser}
               onViewReceipt={(order) => setCompletedOrder(order)}
               onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}
@@ -1152,7 +1214,8 @@ export default function App() {
                       type="number" 
                       step="any"
                       min="0"
-                      className="font-black text-[#B91C1C] text-lg w-16 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button"
+                      readOnly={currentUser?.role !== 'Administrador'}
+                      className={`font-black text-[#B91C1C] text-lg w-16 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button ${currentUser?.role !== 'Administrador' ? 'cursor-not-allowed select-none' : ''}`}
                       value={item.quantity}
                       onChange={(e) => updateQuantityExact(item.id, e.target.value)}
                       onBlur={() => handleBlurQuantity(item.id)}
@@ -1341,7 +1404,8 @@ export default function App() {
                         type="number" 
                         step="any"
                         min="0"
-                        className="font-black text-[#B91C1C] text-xl w-20 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button"
+                        readOnly={currentUser?.role !== 'Administrador'}
+                        className={`font-black text-[#B91C1C] text-xl w-20 bg-transparent text-center border-b-2 border-transparent focus:border-[#B91C1C] focus:outline-none hide-spin-button ${currentUser?.role !== 'Administrador' ? 'cursor-not-allowed select-none' : ''}`}
                         value={item.quantity}
                         onChange={(e) => updateQuantityExact(item.id, e.target.value)}
                         onBlur={() => handleBlurQuantity(item.id)}
@@ -1557,6 +1621,7 @@ export default function App() {
         <ReceiptModal 
           order={completedOrder} 
           onClose={handleCloseReceipt} 
+          onConfirmCheckout={completedOrder.id.startsWith('preview') ? handleCheckout : undefined}
           onKitchenPrint={() => {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);
