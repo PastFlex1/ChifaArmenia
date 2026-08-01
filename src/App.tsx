@@ -612,12 +612,9 @@ export default function App() {
       
       setIsCheckingOut(true);
   
-      // Deduct stock logically
-      const oldItems = activeTableId ? (activeTables.find(t => t.tableNumber === activeTableId)?.items || []) : [];
-      // If we are checking out an active table, we must first REFUND its stock, then DEDUCT the final cart.
-      // Wait, if we are checking out right from the active table, getting the diff between oldItems and cart will ensure
-      // stock is perfectly deducted. Let's do getNetStockChanges(oldItems, cart) just like handleSaveTable!
-      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
+    const targetTableId = (activeTableId || tableNumber).trim();
+    const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
+    const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
 
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
     const profit = cartTotal - totalCost;
@@ -633,7 +630,7 @@ export default function App() {
       orderNumber: nextOrderNumber,
       date: orderDate,
       customerName: '', // Customer name has been removed
-      tableNumber,
+      tableNumber: targetTableId,
       items: [...cart],
       total: cartTotal,
       totalCost,
@@ -660,14 +657,17 @@ export default function App() {
     });
 
     batch.set(doc(db, 'orders', newOrder.id), newOrder);
-    if (activeTableId) {
-      batch.delete(doc(db, 'active_tables', activeTableId));
+    if (targetTableId && targetTableId.toLowerCase() !== 'para llevar') {
+      batch.delete(doc(db, 'active_tables', targetTableId));
     }
 
     try {
       await batch.commit();
       setOrderCounter(nextOrderNumber);
       setCompletedOrder(newOrder);
+      if (targetTableId) {
+        removeLocalDraft(targetTableId);
+      }
       clearCart();
       setActiveTableId(null);
     } catch (e) {
@@ -679,7 +679,8 @@ export default function App() {
   };
 
   const handleFreeTableWithoutCheckout = async () => {
-    if (!activeTableId || isCheckingOut) return;
+    const targetTableId = (activeTableId || tableNumber).trim();
+    if (!targetTableId || isCheckingOut) return;
     
     const result = await Swal.fire({
       title: '¿Liberar mesa sin cobrar?',
@@ -697,7 +698,7 @@ export default function App() {
     setIsCheckingOut(true);
 
     try {
-      const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
+      const previousTable = activeTables.find(t => t.tableNumber === targetTableId);
       const oldItems = previousTable ? previousTable.items : [];
       
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, []);
@@ -709,10 +710,13 @@ export default function App() {
       newDrinks.forEach((drink, index) => {
         if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
       });
-      batch.delete(doc(db, 'active_tables', activeTableId));
+      if (targetTableId.toLowerCase() !== 'para llevar') {
+        batch.delete(doc(db, 'active_tables', targetTableId));
+      }
       
       await batch.commit();
-      Swal.fire({ title: 'Éxito', text: `Mesa ${activeTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
+      removeLocalDraft(targetTableId);
+      Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
       clearCart();
       setActiveTableId(null);
       setCurrentView('mesas');
@@ -1723,11 +1727,15 @@ export default function App() {
           order={completedOrder} 
           onClose={handleCloseReceipt} 
           onConfirmCheckout={completedOrder.id.startsWith('preview') ? handleCheckout : undefined}
-          onKitchenPrint={() => {
+          onKitchenPrint={async () => {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);
-            if (activeTableId && completedOrder.id.startsWith('preview')) {
-               handleSaveTable(newCart);
+            const targetTable = (activeTableId || tableNumber).trim();
+            if (targetTable && targetTable.toLowerCase() !== 'para llevar' && completedOrder.id.startsWith('preview')) {
+              const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name);
+              if (latencyInfo.isOnline && latencyInfo.isFast) {
+                await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos);
+              }
             }
           }}
         />
