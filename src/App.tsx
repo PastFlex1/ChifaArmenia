@@ -418,10 +418,11 @@ export default function App() {
   };
 
   const updateQuantity = (id: string, delta: number) => {
-    if (delta < 0 && currentUser?.role !== 'Administrador') {
+    const isSavedOrder = Boolean(activeTableId);
+    if (delta < 0 && isSavedOrder && currentUser?.role !== 'Administrador') {
       Swal.fire({
         title: 'Acción Restringida',
-        text: 'Solo el Administrador está autorizado para reducir o eliminar productos de la nota de venta.',
+        text: 'Solo el Administrador está autorizado para reducir o eliminar productos de una orden previamente guardada.',
         icon: 'warning',
         confirmButtonColor: '#B91C1C'
       });
@@ -444,14 +445,15 @@ export default function App() {
   };
 
   const updateQuantityExact = (id: string, newQuantity: number | string) => {
+    const isSavedOrder = Boolean(activeTableId);
     setCart((prev) => prev.map((item) => {
       if (item.id === id) {
-        if (currentUser?.role !== 'Administrador') {
-          const numQty = parseFloat(newQuantity as string);
+        const numQty = parseFloat(newQuantity as string);
+        if (isSavedOrder && currentUser?.role !== 'Administrador') {
           if (isNaN(numQty) || numQty < item.quantity) {
             Swal.fire({
               title: 'Acción Restringida',
-              text: 'Solo el Administrador está autorizado para reducir o eliminar productos de la nota de venta.',
+              text: 'Solo el Administrador está autorizado para reducir o eliminar productos de una orden previamente guardada.',
               icon: 'warning',
               confirmButtonColor: '#B91C1C'
             });
@@ -459,7 +461,6 @@ export default function App() {
           }
         }
         if (newQuantity === '') return { ...item, quantity: '' as any }; // Permitir borrar temporalmente solo si admin
-        const numQty = parseFloat(newQuantity as string);
         if (isNaN(numQty) || numQty < 0) return item;
         
         const maxAvailable = getMaxAvailable(item.menuItem);
@@ -472,6 +473,7 @@ export default function App() {
       return item;
     }).filter(item => item.quantity !== 0)); // No eliminar si es string vacio todavia
   };
+
 
   const handleBlurQuantity = (id: string) => {
      setCart((prev) => prev.filter(item => {
@@ -1291,7 +1293,7 @@ export default function App() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                         <div className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity">
-                          {currentUser?.role === 'Administrador' && (
+                          {(currentUser?.role === 'Administrador' || !activeTableId) && (
                             <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
                               {item.quantity === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                             </button>
@@ -1352,7 +1354,7 @@ export default function App() {
           )}
           
           <div className="flex gap-2">
-            {currentUser?.role === 'Administrador' && (
+            {(currentUser?.role === 'Administrador' || !activeTableId) && (
               <button
                 onClick={clearCart}
                 disabled={cart.length === 0 || isCheckingOut}
@@ -1502,7 +1504,7 @@ export default function App() {
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-xs opacity-60 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                           <div className="flex items-center gap-1 opacity-80">
-                            {currentUser?.role === 'Administrador' && (
+                            {(currentUser?.role === 'Administrador' || !activeTableId) && (
                               <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
                                 {item.quantity === 1 ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
                               </button>
