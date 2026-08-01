@@ -1,40 +1,34 @@
 ========================================================================
-    GUIA DE INSTALACION Y USO EN LA COMPUTADORA DEL RESTAURANTE (CHIFA POS)
+ GUIA DE INSTALACION DEL SERVIDOR DE IMPRESION DE TICKETS (CHIFA POS)
 ========================================================================
 
-Paso 1: Copiar la carpeta completa "chifa-pos" a la computadora del restaurante
+Paso 1: Copiar la carpeta "chifa-pos" a la PC con la impresora
 ------------------------------------------------------------------------
-Puedes copiar esta carpeta al Escritorio o a la unidad C:\.
+Copia esta carpeta al Escritorio o C:\ en la computadora donde está conectada
+la impresora física (Caja o Cocina).
 
 Paso 2: Activar el Inicio Automático (SOLO SE HACE 1 SOLA VEZ)
 ------------------------------------------------------------------------
 1. Abre la carpeta "chifa-pos".
-2. Haz doble clic en el archivo:
+2. Haz doble clic en:
    
    -->  instalar_inicio_automatico.bat  <--
 
 ¡Listo! A partir de ese momento, cada vez que enciendan la computadora:
-- El Servidor Web del POS iniciará solo en segundo plano.
-- El Servidor de Impresion de Tickets iniciará solo en segundo plano.
+- ÚNICAMENTE el Servidor de Impresión de Tickets iniciará solo en segundo plano.
+- Estará escuchando 24/7 las órdenes emitidas desde el sistema en la Nube
+  e imprimirá los tickets automáticamente.
 
 ------------------------------------------------------------------------
-PREGUNTAS FRECUENTES Y HERRAMIENTAS
+HERRAMIENTAS UTILIZADAS
 ------------------------------------------------------------------------
 
-¿Qué pasa si hacen doble clic en "iniciar_servidor_oculto.vbs" varias veces?
-- NO HAY PROBLEMA: El sistema incluye protección anti-duplicados.
-  Si los servidores ya están abiertos, no se abrirán instancias dobles ni
-  se duplicará la impresión de tickets.
-
-¿Cómo ver si los servidores están funcionando bien?
+¿Cómo ver si la impresora está escuchando la nube?
 - Haz doble clic en: ver_estado_servidor.bat
-  Te mostrará si los procesos están activos, si el puerto 8080 responde
-  y los últimos registros de tickets.
 
-¿Cómo apagar o reiniciar los servidores manualmente?
+¿Cómo detener el servidor de impresión manualmente?
 - Haz doble clic en: detener_servidor.bat
-  Luego puedes volver a ejecutar iniciar_servidor_oculto.vbs
 
-¿Cómo quitar el inicio automático si ya no se requiere?
+¿Cómo quitar el inicio automático?
 - Haz doble clic en: desinstalar_inicio_automatico.bat
 ========================================================================

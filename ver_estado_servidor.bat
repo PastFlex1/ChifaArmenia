@@ -1,27 +1,17 @@
 @echo off
-title Estado de Servidores - Chifa POS
+title Estado de Servidor de Impresion - Chifa POS
 echo ========================================================
-echo          ESTADO DE SERVIDORES CHIFA POS
+echo   ESTADO DEL SERVIDOR DE IMPRESION DE TICKETS (CHIFA POS)
 echo ========================================================
 echo.
-echo [1] PROCESOS NODE EN EJECUCION:
-tasklist /FI "IMAGENAME eq node.exe"
+echo [1] PROCESO DE IMPRESION EN EJECUCION:
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \"name='node.exe'\" | Where-Object { $_.CommandLine -like '*print-server.js*' } | Select-Object ProcessId, CommandLine"
 echo.
-echo [2] VERIFICANDO PUERTO 8080 (WEB POS):
-netstat -ano | findstr ":8080"
-echo.
-echo [3] ULTIMOS LOGS DE IMPRESION DE TICKETS (logs_print.log):
+echo [2] ULTIMOS LOGS DE IMPRESION DE TICKETS (logs_print.log):
 if exist logs_print.log (
-    powershell -Command "Get-Content logs_print.log -Tail 10"
+    powershell -Command "Get-Content logs_print.log -Tail 15"
 ) else (
     echo [INFO] No hay archivo logs_print.log aun.
-)
-echo.
-echo [4] ULTIMOS LOGS DEL SERVIDOR WEB (logs_web.log):
-if exist logs_web.log (
-    powershell -Command "Get-Content logs_web.log -Tail 10"
-) else (
-    echo [INFO] No hay archivo logs_web.log aun.
 )
 echo.
 echo ========================================================
