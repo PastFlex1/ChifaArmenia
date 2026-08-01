@@ -107,9 +107,12 @@ export default function App() {
     };
   }, [activeTables, rawMaterials, drinks, dishes, combos]);
 
-  // Guardado Automático Inteligente (Instantáneo en Local + Sync según velocidad)
+  // Guardado Automático Inteligente (Solo para mesas ya activas/abiertas)
   useEffect(() => {
-    const targetTable = (activeTableId || tableNumber).trim();
+    // Si no hay mesa activa seleccionada, no auto-guardar borradores como mesas en Firestore
+    if (!activeTableId) return;
+
+    const targetTable = activeTableId.trim();
     if (!targetTable) return;
 
     // 1. Guardado Local Instantáneo (0ms)
@@ -129,7 +132,7 @@ export default function App() {
     } else {
       setSyncState(latencyInfo.isOnline ? 'local_slow' : 'offline');
     }
-  }, [cart, tableNumber, activeTableId]);
+  }, [cart, activeTableId]);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
@@ -573,17 +576,28 @@ export default function App() {
     };
 
     const handleSaveTable = async (customCart?: CartItem[] | any) => {
+      const targetTable = (activeTableId || tableNumber).trim();
+      if (!targetTable) {
+        Swal.fire({
+          title: 'Falta la Mesa',
+          text: 'Por favor, escribe el número de mesa antes de guardar.',
+          icon: 'warning',
+          confirmButtonColor: '#B91C1C'
+        });
+        return;
+      }
+
       const itemsToSave = Array.isArray(customCart) ? customCart : cart;
-      if (!activeTableId || isCheckingOut) return;
+      if (itemsToSave.length === 0 || isCheckingOut) return;
       setIsCheckingOut(true);
       
-      const tableOrder = saveLocalDraft(activeTableId, itemsToSave, currentUser?.id, currentUser?.name);
+      const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name);
       
       try {
         if (latencyInfo.isOnline && latencyInfo.isFast) {
           const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos);
           if (success) {
-            removeLocalDraft(activeTableId);
+            removeLocalDraft(targetTable);
           }
         }
         setCart([]);
@@ -1409,13 +1423,22 @@ export default function App() {
                 )}
               </div>
             ) : (
-              <button
-                onClick={handleCheckout}
-                disabled={cart.length === 0 || isCheckingOut}
-                className="flex-1 py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-[0.2em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-              >
-                {isCheckingOut ? 'Procesando...' : 'Cobrar y Emitir Nota'}
-              </button>
+              <div className="flex gap-2 flex-1">
+                <button
+                  onClick={() => handleSaveTable()}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                >
+                  Guardar en Mesa
+                </button>
+                <button
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                >
+                  {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1621,13 +1644,22 @@ export default function App() {
                 )}
               </>
             ) : (
-              <button
-                onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
-                disabled={cart.length === 0 || isCheckingOut}
-                className="w-full py-4 px-4 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm tracking-widest shadow-[4px_4px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-              >
-                {isCheckingOut ? 'Procesando...' : 'Cobrar Pedido'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                >
+                  Guardar Mesa
+                </button>
+                <button
+                  onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                >
+                  {isCheckingOut ? '...' : 'Cobrar Directo'}
+                </button>
+              </div>
             )}
           </div>
         </div>
