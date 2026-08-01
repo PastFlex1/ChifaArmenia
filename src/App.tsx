@@ -1288,7 +1288,8 @@ export default function App() {
                     <input
                       type="number"
                       min="1"
-                      className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                      disabled={Boolean(activeTableId) && currentUser?.role !== 'Administrador'}
+                      className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
                       value={item.quantity}
                       onChange={(e) => updateQuantityExact(item.id, e.target.value)}
                       onBlur={() => handleBlurQuantity(item.id)}
@@ -1501,9 +1502,15 @@ export default function App() {
                 {cart.map((item) => (
                   <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                     <div className="flex items-center gap-3">
-                      <span className="font-black text-[#B91C1C] text-xl min-w-[2.5rem] text-center select-none">
-                        {item.quantity}
-                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        disabled={Boolean(activeTableId) && currentUser?.role !== 'Administrador'}
+                        className="w-14 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-base focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
+                        value={item.quantity}
+                        onChange={(e) => updateQuantityExact(item.id, e.target.value)}
+                        onBlur={() => handleBlurQuantity(item.id)}
+                      />
                       <div className="flex flex-col">
                         <span className="font-bold text-sm uppercase leading-tight line-clamp-2">{item.menuItem.name}</span>
                         <div className="flex items-center gap-3 mt-1">
