@@ -67,7 +67,7 @@ export function getAllLocalDrafts(): Record<string, TableOrder> {
   }
 }
 
-// Medidor de Latencia con Firebase (Fast < 1500ms)
+// Medidor de Latencia de Red (Fast < 1500ms)
 export async function measureFirebaseLatency(timeoutMs = 1500): Promise<LatencyStatus> {
   if (!navigator.onLine) {
     return { isOnline: false, isFast: false, latencyMs: Infinity };
@@ -78,15 +78,17 @@ export async function measureFirebaseLatency(timeoutMs = 1500): Promise<LatencyS
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(`https://firestore.googleapis.com/v1/projects/chifa-52865/databases/(default)/documents?pageSize=1`, {
+    // Petición ultrarrápida sin bloqueo de CORS (Google Connectivity Check)
+    await fetch('https://www.gstatic.com/generate_204', {
       method: 'GET',
+      mode: 'no-cors',
       signal: controller.signal,
       cache: 'no-store'
     });
     clearTimeout(timer);
 
     const latencyMs = Date.now() - startTime;
-    const isFast = response.ok && latencyMs < 1500;
+    const isFast = latencyMs < 1500;
     return { isOnline: true, isFast, latencyMs };
   } catch (e) {
     const latencyMs = Date.now() - startTime;
