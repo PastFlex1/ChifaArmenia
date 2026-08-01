@@ -4,7 +4,7 @@ currentDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set objShell = WScript.CreateObject("WScript.Shell")
 objShell.CurrentDirectory = currentDir
 
-' Verificar si el servidor de impresion de tickets ya esta ejecutandose para evitar duplicados
+' Verificar si ya existe un proceso de node.exe ejecutando print-server.js
 On Error Resume Next
 Set WMIService = GetObject("winmgmts:\\.\root\cimv2")
 Set colItems = WMIService.ExecQuery("Select CommandLine from Win32_Process Where Name = 'node.exe'")
@@ -20,7 +20,7 @@ For Each objItem in colItems
 Next
 On Error Goto 0
 
-' Arrancar UNICAMENTE el Servidor de Impresion de Tickets si no estaba iniciado
+' Solo arrancar si NO estaba iniciado previamente (evita duplicar impresiones)
 If Not isPrintRunning Then
-    objShell.Run "cmd /c ""runner_print.bat""", 0, False
+    objShell.Run """" & currentDir & "\node.exe"" print-server.js", 0, False
 End If

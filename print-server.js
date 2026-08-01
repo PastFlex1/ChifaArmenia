@@ -12,27 +12,6 @@ const PRINTER_SHARED_NAME_CAJA = 'caja'; // Nombre con el que compartirás la im
 const PRINTER_IP_CUSTOMER = '192.168.100.X'; // Solo se usa si CAJA_IS_USB es false
 const PRINTER_PORT = 9100;
 
-// Manejo global de errores para evitar que el proceso colapse por fallos de red temporales
-process.on('uncaughtException', (err) => {
-  console.error(`[${new Date().toLocaleString()}] [ERROR NO CONTROLADO]`, err.message || err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error(`[${new Date().toLocaleString()}] [PROMESA RECHAZADA]`, reason);
-});
-
-// CONTROL DE INSTANCIA ÚNICA (Evita duplicar impresiones si se ejecuta dos veces)
-const LOCK_PORT = 9191;
-const lockServer = net.createServer();
-lockServer.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.log(`[!] El Servidor de Impresión YA está ejecutándose en segundo plano (Puerto ${LOCK_PORT} ocupado). Cancelando instancia duplicada.`);
-    process.exit(0);
-  }
-});
-lockServer.listen(LOCK_PORT, '127.0.0.1');
-
-
-
 // Configuración de Firebase (copiada de tu frontend)
 const firebaseConfig = {
   apiKey: "AIzaSyC3JbrBLOAiX99IGWroPSsCqx9Zj42QQoQ",
@@ -94,21 +73,30 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('--------------------------------'));
           
           writeData(ALIGN_LEFT);
-          writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString()}`));
+          writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`));
           writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
           if (order.tableNumber) {
              writeData(textToBuffer(`MESA: ${order.tableNumber}`));
           }
           
           writeData(textToBuffer('--------------------------------'));
-          writeData(textToBuffer('Cliente: '));
-          writeData(textToBuffer('C.I: '));
-          writeData(textToBuffer('Correo: '));
-          writeData(textToBuffer('Telf: '));
-          writeData(textToBuffer('Dir: '));
-          writeData(textToBuffer('F.Nacimiento: '));
+          writeData(textToBuffer('Cliente: .......................'));
+          writeData(textToBuffer('C.I: ...........................'));
+          writeData(textToBuffer('Correo: ........................'));
+          writeData(textToBuffer('Telf: ..........................'));
+          writeData(textToBuffer('Dir: ...........................'));
+          writeData(textToBuffer('F.Nacimiento: ..................'));
           writeData(textToBuffer('--------------------------------'));
           
+          writeData(textToBuffer('\n'));
+          writeData(ALIGN_CENTER);
+          writeData(BOLD_ON);
+          writeData(textToBuffer('PROPINA: $ __________________'));
+          writeData(BOLD_OFF);
+          writeData(textToBuffer('\n\n'));
+          
+          writeData(ALIGN_LEFT);
+          writeData(textToBuffer('--------------------------------'));
           writeData(textToBuffer('CANT   DESCRIPCION       TOTAL'));
           writeData(textToBuffer('--------------------------------'));
           
@@ -238,7 +226,7 @@ onSnapshot(q, (snapshot) => {
         // Actualizar en Firebase para no volver a imprimir
         await updateDoc(doc(db, "print_jobs", jobId), {
           status: "printed",
-          printedAt: new Date().toISOString()
+          printedAt: new Date()
         });
       } catch (error) {
         console.error(`[ERROR] Fallo al imprimir ${jobId}:`, error.message);
