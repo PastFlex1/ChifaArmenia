@@ -3,6 +3,7 @@ import { Order, UserAccount } from '../types';
 import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
+import Swal from 'sweetalert2';
 
 interface SalesViewProps {
   orders: Order[];
@@ -19,7 +20,54 @@ interface SalesViewProps {
 export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleVoidOrderConfirm = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: '¿Anular esta orden?',
+      text: 'Los productos vendidos regresarán al inventario y los totales se descontarán de las ganancias. Esta acción no se puede deshacer.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#B91C1C',
+      cancelButtonColor: '#1A1A1A',
+      confirmButtonText: 'Sí, Anular Orden',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed && onVoidOrder) {
+      onVoidOrder(orderId);
+      Swal.fire({
+        title: 'Orden Anulada',
+        text: 'La orden ha sido anulada exitosamente y el inventario ha sido restituido.',
+        icon: 'success',
+        timer: 1800,
+        showConfirmButton: false
+      });
+    }
+  };
+
+  const handleDeleteOrderConfirm = async (orderId: string) => {
+    const result = await Swal.fire({
+      title: '¿Eliminar nota de venta?',
+      text: 'Esta nota de venta se eliminará permanentemente del sistema.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#B91C1C',
+      cancelButtonColor: '#1A1A1A',
+      confirmButtonText: 'Sí, Eliminar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed && onDeleteOrder) {
+      onDeleteOrder(orderId);
+      Swal.fire({
+        title: 'Eliminada',
+        text: 'La nota de venta ha sido eliminada del registro.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
+    }
+  };
 
   const sellers = useMemo(() => {
     const list = new Map<string, string>();
@@ -470,64 +518,35 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                   </div>
 
                   {/* Actions */}
-                  {confirmDeleteId === order.id ? (
-                    <div className="mt-auto flex flex-col gap-2">
-                       <p className="text-xs text-[#B91C1C] font-bold text-center leading-tight">¿Eliminar nota de venta?</p>
-                       <div className="flex gap-2">
-                         <button 
-                           onClick={() => setConfirmDeleteId(null)}
-                           className="flex-1 bg-white text-black py-2 rounded-xl font-black text-xs uppercase hover:bg-slate-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
-                         >
-                           Cancelar
-                         </button>
-                         <button 
-                           onClick={() => {
-                             if (onDeleteOrder) {
-                               onDeleteOrder(order.id);
-                             }
-                             setConfirmDeleteId(null);
-                           }}
-                           className="flex-1 bg-[#B91C1C] text-white py-2 rounded-xl font-black text-xs uppercase hover:bg-red-800 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
-                         >
-                           Eliminar
-                         </button>
-                       </div>
-                    </div>
-                  ) : (
-                    <div className="mt-auto flex gap-2 relative z-20">
+                  <div className="mt-auto flex gap-2 relative z-20">
+                    <button 
+                      onClick={() => onViewReceipt(order)}
+                      className="flex-1 bg-[#1A1A1A] text-[#FFD700] py-3 rounded-xl font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-2 hover:bg-black transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
+                    >
+                      <Printer className="w-4 h-4 hidden sm:block" />
+                      Ver / Imprimir
+                    </button>
+                    
+                    {order.status !== 'voided' && onVoidOrder && (
                       <button 
-                        onClick={() => onViewReceipt(order)}
-                        className="flex-1 bg-[#1A1A1A] text-[#FFD700] py-3 rounded-xl font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-2 hover:bg-black transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
+                        onClick={() => handleVoidOrderConfirm(order.id)}
+                        className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
+                        title="Anular orden y devolver inventario"
                       >
-                        <Printer className="w-4 h-4 hidden sm:block" />
-                        Ver / Imprimir
+                        <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
                       </button>
-                      
-                      {order.status !== 'voided' && onVoidOrder && (
-                        <button 
-                          onClick={() => {
-                            if (window.confirm('¿Está seguro de que desea ANULAR esta orden?\n\nLos productos vendidos regresarán al inventario y los totales se descontarán de las ganancias. Esta acción no se puede deshacer.')) {
-                              onVoidOrder(order.id);
-                            }
-                          }}
-                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                          title="Anular orden y devolver inventario"
-                        >
-                          <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      )}
+                    )}
 
-                      {onDeleteOrder && (
-                        <button 
-                          onClick={() => setConfirmDeleteId(order.id)}
-                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                          title="Eliminar orden permanentemente"
-                        >
-                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                    {onDeleteOrder && (
+                      <button 
+                        onClick={() => handleDeleteOrderConfirm(order.id)}
+                        className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
+                        title="Eliminar orden permanentemente"
+                      >
+                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+                    )}
+                  </div>
                   
                 </div>
               ))}

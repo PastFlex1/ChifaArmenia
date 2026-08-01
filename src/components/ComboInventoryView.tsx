@@ -3,6 +3,7 @@ import { Layers, Plus, Trash2, Edit2, Search, X, Download } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import { Category, Dish, Drink } from '../types';
 import { CustomSelect } from './CustomSelect';
+import Swal from 'sweetalert2';
 
 interface ComboItem {
   itemId: string;
@@ -377,8 +378,19 @@ export function ComboInventoryView({
                     <Edit2 className="w-4 h-4" /> Editar
                   </button>
                   <button 
-                    onClick={() => {
-                      if (window.confirm('¿Eliminar este combo?')) {
+                    onClick={async () => {
+                      const result = await Swal.fire({
+                        title: '¿Eliminar este combo?',
+                        text: 'El combo será eliminado permanentemente.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#B91C1C',
+                        cancelButtonColor: '#1A1A1A',
+                        confirmButtonText: 'Sí, Eliminar',
+                        cancelButtonText: 'Cancelar'
+                      });
+
+                      if (result.isConfirmed) {
                         onDeleteCombo(combo.id);
                       }
                     }}
