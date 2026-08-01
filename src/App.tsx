@@ -1284,21 +1284,26 @@ export default function App() {
             <div className="space-y-4">
               {cart.map((item) => (
                 <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-black text-[#B91C1C] text-lg min-w-[2rem] text-center select-none">
-                      {item.quantity}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C]"
+                      value={item.quantity}
+                      onChange={(e) => updateQuantityExact(item.id, e.target.value)}
+                      onBlur={() => handleBlurQuantity(item.id)}
+                    />
                     <div className="flex flex-col">
                       <span className="font-bold text-sm uppercase leading-tight">{item.menuItem.name}</span>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
-                        <div className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 opacity-80 hover:opacity-100 transition-opacity">
                           {(currentUser?.role === 'Administrador' || !activeTableId) && (
-                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
-                              {item.quantity === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Reducir o eliminar">
+                              {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-[#B91C1C]" /> : <Minus className="w-3 h-3" />}
                             </button>
                           )}
-                          <button onClick={() => updateQuantity(item.id, 1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black">
+                          <button onClick={() => updateQuantity(item.id, 1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Aumentar">
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
@@ -1505,11 +1510,11 @@ export default function App() {
                           <span className="text-xs opacity-60 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
                           <div className="flex items-center gap-1 opacity-80">
                             {(currentUser?.role === 'Administrador' || !activeTableId) && (
-                              <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
-                                {item.quantity === 1 ? <Trash2 className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
+                              <button onClick={() => updateQuantity(item.id, -1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200" title="Reducir o eliminar">
+                                {item.quantity === 1 ? <Trash2 className="w-4 h-4 text-[#B91C1C]" /> : <Minus className="w-4 h-4" />}
                               </button>
                             )}
-                            <button onClick={() => updateQuantity(item.id, 1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200">
+                            <button onClick={() => updateQuantity(item.id, 1)} className="bg-[#F7F4F0] border-2 border-black rounded w-7 h-7 flex items-center justify-center text-black active:bg-slate-200" title="Aumentar">
                               <Plus className="w-4 h-4" />
                             </button>
                           </div>
