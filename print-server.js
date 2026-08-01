@@ -217,7 +217,7 @@ onSnapshot(q, (snapshot) => {
         // Actualizar en Firebase para no volver a imprimir
         await updateDoc(doc(db, "print_jobs", jobId), {
           status: "printed",
-          printedAt: new Date()
+          printedAt: new Date().toISOString()
         });
       } catch (error) {
         console.error(`[ERROR] Fallo al imprimir ${jobId}:`, error.message);

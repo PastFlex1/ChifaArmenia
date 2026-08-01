@@ -16,6 +16,7 @@ import { MesasView } from './components/MesasView';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment } from 'firebase/firestore';
 import Swal from 'sweetalert2';
+import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, SyncState, LatencyStatus } from './utils/syncManager';
 
 export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
@@ -32,6 +33,10 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [activeTables, setActiveTables] = useState<TableOrder[]>([]);
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
+  
+  // Sync State & Latency Monitor
+  const [syncState, setSyncState] = useState<SyncState>('synced');
+  const [latencyInfo, setLatencyInfo] = useState<LatencyStatus>({ isOnline: true, isFast: true, latencyMs: 0 });
   
   // Mobile Cart State
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -65,6 +70,66 @@ export default function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Monitor Periódico de Latencia y Procesador de Cola Local
+  useEffect(() => {
+    let isMounted = true;
+    const checkAndSync = async () => {
+      const lat = await measureFirebaseLatency();
+      if (!isMounted) return;
+      setLatencyInfo(lat);
+
+      if (lat.isOnline && lat.isFast) {
+        const drafts = getAllLocalDrafts();
+        const keys = Object.keys(drafts);
+        if (keys.length > 0) {
+          setSyncState('syncing');
+          for (const tNum of keys) {
+            const success = await syncTableToFirestore(drafts[tNum], activeTables, rawMaterials, drinks, dishes, combos);
+            if (success) {
+              removeLocalDraft(tNum);
+            }
+          }
+          if (isMounted) setSyncState('synced');
+        } else if (isMounted && syncState !== 'syncing') {
+          setSyncState('synced');
+        }
+      } else if (isMounted) {
+        setSyncState(lat.isOnline ? 'local_slow' : 'offline');
+      }
+    };
+
+    checkAndSync();
+    const interval = setInterval(checkAndSync, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTables, rawMaterials, drinks, dishes, combos]);
+
+  // Guardado Automático Inteligente (Instantáneo en Local + Sync según velocidad)
+  useEffect(() => {
+    const targetTable = (activeTableId || tableNumber).trim();
+    if (!targetTable) return;
+
+    // 1. Guardado Local Instantáneo (0ms)
+    const draft = saveLocalDraft(targetTable, cart, currentUser?.id, currentUser?.name);
+
+    // 2. Intento de Sincronización en Nube según Latencia
+    if (latencyInfo.isOnline && latencyInfo.isFast) {
+      setSyncState('syncing');
+      syncTableToFirestore(draft, activeTables, rawMaterials, drinks, dishes, combos).then((success) => {
+        if (success) {
+          setSyncState('synced');
+          removeLocalDraft(targetTable);
+        } else {
+          setSyncState('local_slow');
+        }
+      });
+    } else {
+      setSyncState(latencyInfo.isOnline ? 'local_slow' : 'offline');
+    }
+  }, [cart, tableNumber, activeTableId]);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
@@ -418,6 +483,10 @@ export default function App() {
   };
 
   const clearCart = () => {
+    const targetTable = (activeTableId || tableNumber).trim();
+    if (targetTable) {
+      removeLocalDraft(targetTable);
+    }
     setCart([]);
     setTableNumber('');
     setCashReceived('');
@@ -428,12 +497,18 @@ export default function App() {
   }, [cart]);
 
   const handleTableClick = (tNumber: string) => {
-    const table = activeTables.find(t => t.tableNumber === tNumber);
-    if (table) {
-      setCart(table.items);
-    } else {
-      setCart([]);
+    // Si había una mesa previa con items, asegurar guardado local antes de cambiar
+    if (activeTableId && cart.length > 0) {
+      saveLocalDraft(activeTableId, cart, currentUser?.id, currentUser?.name);
     }
+
+    // Cargar borrador local o mesa de Firestore
+    const localDraft = getLocalDraft(tNumber);
+    const firestoreTable = activeTables.find(t => t.tableNumber === tNumber);
+    
+    const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
+
+    setCart(loadedItems);
     setTableNumber(tNumber);
     setActiveTableId(tNumber);
     setCurrentView('pos');
@@ -498,55 +573,23 @@ export default function App() {
     const handleSaveTable = async (customCart?: CartItem[] | any) => {
       const itemsToSave = Array.isArray(customCart) ? customCart : cart;
       if (!activeTableId || isCheckingOut) return;
-      if (itemsToSave.length === 0 && !activeTableId) return;
       setIsCheckingOut(true);
       
-      const previousTable = activeTables.find(t => t.tableNumber === activeTableId);
-      const oldItems = previousTable ? previousTable.items : [];
+      const tableOrder = saveLocalDraft(activeTableId, itemsToSave, currentUser?.id, currentUser?.name);
       
-      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, itemsToSave);
-      
-      const tableOrder: TableOrder = {
-        id: activeTableId,
-        tableNumber: activeTableId,
-        items: [...itemsToSave],
-        createdAt: previousTable ? previousTable.createdAt : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        sellerId: currentUser?.id,
-        sellerName: currentUser?.name
-      };
-
-      const batch = writeBatch(db);
-      newRawMaterials.forEach((rm, index) => {
-        if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
-      });
-      newDrinks.forEach((drink, index) => {
-        if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
-      });
-      if (itemsToSave.length === 0) {
-        if (activeTableId) batch.delete(doc(db, 'active_tables', activeTableId));
-      } else {
-        const tableOrder: TableOrder = {
-          id: activeTableId,
-          tableNumber: activeTableId,
-          items: [...itemsToSave],
-          createdAt: previousTable ? previousTable.createdAt : new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          sellerId: currentUser?.id,
-          sellerName: currentUser?.name
-        };
-        batch.set(doc(db, 'active_tables', activeTableId), tableOrder);
-      }
-
       try {
-        await batch.commit();
-        Swal.fire({ title: 'Éxito', text: itemsToSave.length === 0 ? `Mesa ${activeTableId} liberada.` : `Mesa ${activeTableId} guardada correctamente.`, icon: 'success', timer: 1500, showConfirmButton: false });
-        clearCart();
+        if (latencyInfo.isOnline && latencyInfo.isFast) {
+          const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos);
+          if (success) {
+            removeLocalDraft(activeTableId);
+          }
+        }
+        setCart([]);
+        setTableNumber('');
         setActiveTableId(null);
         setCurrentView('mesas');
       } catch (e) {
-        console.error("Error saving table:", e);
-        Swal.fire({ title: 'Error', text: 'Error al guardar la mesa.', icon: 'error', confirmButtonColor: '#000' });
+        console.error("Error al salir de mesa:", e);
       } finally {
         setIsCheckingOut(false);
       }
@@ -1175,12 +1218,42 @@ export default function App() {
         <div className="w-[320px] xl:w-[380px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
         
         {/* Cart Header */}
-        <div className="bg-[#B91C1C] text-white p-5 flex flex-col gap-1 z-10 shrink-0 border-b-2 border-black">
-          <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
-            Nota de Venta
-          </h2>
-          <span className="text-[10px] uppercase font-bold opacity-80">Nuevo Pedido</span>
+        <div className="bg-[#B91C1C] text-white p-4 flex flex-col gap-1.5 z-10 shrink-0 border-b-2 border-black">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2 text-base">
+              <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
+              Nota de Venta
+            </h2>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border border-white/30 shadow-sm bg-black/20 backdrop-blur-sm">
+              {syncState === 'synced' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span className="text-emerald-100">✓ En Nube</span>
+                </>
+              )}
+              {syncState === 'local_slow' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  <span className="text-amber-200">⚡ Guardado Local (Red Lenta)</span>
+                </>
+              )}
+              {syncState === 'offline' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-red-400"></span>
+                  <span className="text-red-200">💾 Guardado Local (Offline)</span>
+                </>
+              )}
+              {syncState === 'syncing' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-blue-300 animate-spin"></span>
+                  <span className="text-blue-100">⏳ Guardando...</span>
+                </>
+              )}
+            </div>
+          </div>
+          <span className="text-[10px] uppercase font-bold opacity-80">
+            {activeTableId ? `Mesa ${activeTableId} (Guardado Automático)` : 'Nuevo Pedido'}
+          </span>
         </div>
           
         <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
@@ -1302,9 +1375,9 @@ export default function App() {
                 <button
                   onClick={handleSaveTable}
                   disabled={isCheckingOut}
-                  className="w-full py-2 px-2 bg-white border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-[#FFD700] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  className="w-full py-2 px-2 bg-emerald-50 border-2 border-black text-emerald-800 rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-emerald-100 active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1"
                 >
-                  {isCheckingOut ? '...' : `Guardar en Mesa ${activeTableId}`}
+                  ✓ Guardado Automático (Ir a Mesas)
                 </button>
                 <button
                   onClick={handleCheckout}
@@ -1357,10 +1430,38 @@ export default function App() {
         <div className="lg:hidden fixed inset-0 bg-white z-[60] flex flex-col h-[100dvh]">
           {/* Cart Header */}
           <div className="bg-[#B91C1C] text-white p-4 flex justify-between items-center z-10 shrink-0 border-b-2 border-black">
-            <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
-              Mi Pedido
-            </h2>
+            <div className="flex flex-col gap-1">
+              <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
+                Mi Pedido
+              </h2>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase border border-white/30 bg-black/20 w-fit">
+                {syncState === 'synced' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span className="text-emerald-100">✓ En Nube</span>
+                  </>
+                )}
+                {syncState === 'local_slow' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span className="text-amber-200">⚡ Guardado Local (Red Lenta)</span>
+                  </>
+                )}
+                {syncState === 'offline' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-red-400"></span>
+                    <span className="text-red-200">💾 Guardado Local (Offline)</span>
+                  </>
+                )}
+                {syncState === 'syncing' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-blue-300 animate-spin"></span>
+                    <span className="text-blue-100">⏳ Guardando...</span>
+                  </>
+                )}
+              </div>
+            </div>
             <button onClick={() => setIsMobileCartOpen(false)} className="p-1 hover:bg-black/20 rounded transition-colors text-white">
               <X className="w-6 h-6" />
             </button>

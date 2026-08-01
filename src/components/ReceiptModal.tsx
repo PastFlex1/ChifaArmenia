@@ -6,7 +6,7 @@ import { jsPDF } from 'jspdf';
 
 import Swal from 'sweetalert2';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 
 interface Props {
   order: Order;
@@ -38,7 +38,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
         order: orderToPrint,
         ticketType: type,
         status: 'pending',
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
       return true;
     } catch (e) {
