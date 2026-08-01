@@ -26,6 +26,16 @@ app.get('*', (req, res) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[!] El Servidor Web POS YA está ejecutándose (Puerto ${PORT} ocupado). Cancelando instancia duplicada.`);
+    process.exit(0);
+  } else {
+    console.error('Error en Servidor Web:', err);
+  }
+});
+

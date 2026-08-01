@@ -12,6 +12,27 @@ const PRINTER_SHARED_NAME_CAJA = 'caja'; // Nombre con el que compartirás la im
 const PRINTER_IP_CUSTOMER = '192.168.100.X'; // Solo se usa si CAJA_IS_USB es false
 const PRINTER_PORT = 9100;
 
+// Manejo global de errores para evitar que el proceso colapse por fallos de red temporales
+process.on('uncaughtException', (err) => {
+  console.error(`[${new Date().toLocaleString()}] [ERROR NO CONTROLADO]`, err.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error(`[${new Date().toLocaleString()}] [PROMESA RECHAZADA]`, reason);
+});
+
+// CONTROL DE INSTANCIA ÚNICA (Evita duplicar impresiones si se ejecuta dos veces)
+const LOCK_PORT = 9191;
+const lockServer = net.createServer();
+lockServer.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[!] El Servidor de Impresión YA está ejecutándose en segundo plano (Puerto ${LOCK_PORT} ocupado). Cancelando instancia duplicada.`);
+    process.exit(0);
+  }
+});
+lockServer.listen(LOCK_PORT, '127.0.0.1');
+
+
+
 // Configuración de Firebase (copiada de tu frontend)
 const firebaseConfig = {
   apiKey: "AIzaSyC3JbrBLOAiX99IGWroPSsCqx9Zj42QQoQ",
