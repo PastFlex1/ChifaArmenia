@@ -255,6 +255,24 @@ export default function App() {
     }
 
     const unsubOrders = onSnapshot(qOrders, snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const order = change.doc.data() as Order;
+          if (order.tableNumber && order.tableNumber.toLowerCase() !== 'para llevar') {
+            const orderTime = new Date(order.date).getTime();
+            // If the order was created in the last 2 minutes, mark as freed locally
+            if (Date.now() - orderTime < 2 * 60 * 1000) {
+              markTableAsFreed(order.tableNumber);
+              // If we are currently looking at this table, clear the cart to prevent ghost saves
+              if (activeTableId === order.tableNumber) {
+                setCart([]);
+                setActiveTableId(null);
+                setTableNumber('');
+              }
+            }
+          }
+        }
+      });
       setOrders(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order)));
     }, (error) => {
       console.error("Error fetching orders:", error);
