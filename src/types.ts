@@ -50,6 +50,7 @@ export interface TableOrder {
   items: CartItem[];
   createdAt: string;
   updatedAt: string;
+  updatedAtTimestamp?: number;
   sellerId?: string;
   sellerName?: string;
 }

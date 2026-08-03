@@ -12,31 +12,55 @@ export interface LatencyStatus {
   latencyMs: number;
 }
 
+// Registro en memoria de timestamps en que las mesas fueron liberadas/cobradas
+const freedTablesTimestamps: Record<string, number> = {};
+
+export function markTableAsFreed(tableNumber: string): void {
+  const normalized = tableNumber.trim();
+  if (!normalized) return;
+  freedTablesTimestamps[normalized] = Date.now();
+  removeLocalDraft(normalized);
+}
+
+export function isTableFreed(tableNumber: string, orderTimestamp?: number): boolean {
+  const normalized = tableNumber.trim();
+  const freedAt = freedTablesTimestamps[normalized];
+  if (!freedAt) return false;
+  if (!orderTimestamp) return true;
+  return orderTimestamp <= freedAt;
+}
+
 // Persistencia Local Instantánea (0ms)
 export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string): TableOrder {
+  const normalized = tableNumber.trim();
   const drafts = getAllLocalDrafts();
-  const existing = drafts[tableNumber];
+  const existing = drafts[normalized];
+  const nowMs = Date.now();
   
   const draftOrder: TableOrder = {
-    id: tableNumber,
-    tableNumber,
+    id: normalized,
+    tableNumber: normalized,
     items: [...items],
-    createdAt: existing ? existing.createdAt : new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existing ? existing.createdAt : new Date(nowMs).toISOString(),
+    updatedAt: new Date(nowMs).toISOString(),
+    updatedAtTimestamp: nowMs,
     sellerId,
     sellerName
   };
 
   if (items.length === 0) {
-    delete drafts[tableNumber];
+    markTableAsFreed(normalized);
   } else {
-    drafts[tableNumber] = draftOrder;
-  }
-
-  try {
-    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
-  } catch (e) {
-    console.error('Error al guardar en localStorage:', e);
+    // Si la mesa se está poblando de nuevo, remover cualquier marca de tiempo de liberación previa
+    if (freedTablesTimestamps[normalized] && nowMs > freedTablesTimestamps[normalized]) {
+      delete freedTablesTimestamps[normalized];
+    }
+    drafts[normalized] = draftOrder;
+    try {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    } catch (e) {
+      console.error('Error al guardar en localStorage:', e);
+    }
   }
 
   return draftOrder;
@@ -44,12 +68,13 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
 
 export function getLocalDraft(tableNumber: string): TableOrder | null {
   const drafts = getAllLocalDrafts();
-  return drafts[tableNumber] || null;
+  return drafts[tableNumber.trim()] || null;
 }
 
 export function removeLocalDraft(tableNumber: string): void {
+  const normalized = tableNumber.trim();
   const drafts = getAllLocalDrafts();
-  delete drafts[tableNumber];
+  delete drafts[normalized];
   try {
     localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
   } catch (e) {
@@ -105,6 +130,14 @@ export async function syncTableToFirestore(
   dishes: Dish[],
   combos: any[]
 ): Promise<boolean> {
+  const syncStartTime = Date.now();
+
+  // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
+  if (isTableFreed(tableOrder.tableNumber, tableOrder.updatedAtTimestamp || syncStartTime)) {
+    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${tableOrder.tableNumber} fue liberada/cobrada.`);
+    return true;
+  }
+
   try {
     const previousTable = activeTables.find(t => t.tableNumber === tableOrder.tableNumber);
     const oldItems = previousTable ? previousTable.items : [];
@@ -174,6 +207,11 @@ export async function syncTableToFirestore(
     if (newItems.length === 0) {
       batch.delete(doc(db, 'active_tables', tableOrder.tableNumber));
     } else {
+      // Verificación de seguridad justo antes del commit
+      if (isTableFreed(tableOrder.tableNumber, syncStartTime)) {
+        console.log(`[syncTableToFirestore] Commit cancelado: La mesa ${tableOrder.tableNumber} fue liberada/cobrada durante la sincronización.`);
+        return true;
+      }
       batch.set(doc(db, 'active_tables', tableOrder.tableNumber), tableOrder);
     }
 

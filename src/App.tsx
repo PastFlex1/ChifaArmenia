@@ -16,7 +16,7 @@ import { MesasView } from './components/MesasView';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, SyncState, LatencyStatus } from './utils/syncManager';
+import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, SyncState, LatencyStatus } from './utils/syncManager';
 
 export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
@@ -490,7 +490,7 @@ export default function App() {
   const clearCart = () => {
     const targetTable = (activeTableId || tableNumber).trim();
     if (targetTable) {
-      removeLocalDraft(targetTable);
+      markTableAsFreed(targetTable);
     }
     setCart([]);
     setTableNumber('');
@@ -680,7 +680,7 @@ export default function App() {
       setOrderCounter(nextOrderNumber);
       setCompletedOrder(newOrder);
       if (targetTableId) {
-        removeLocalDraft(targetTableId);
+        markTableAsFreed(targetTableId);
       }
       clearCart();
       setActiveTableId(null);
@@ -729,7 +729,7 @@ export default function App() {
       }
       
       await batch.commit();
-      removeLocalDraft(targetTableId);
+      markTableAsFreed(targetTableId);
       Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
       clearCart();
       setActiveTableId(null);
