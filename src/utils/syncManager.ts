@@ -47,20 +47,15 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
     sellerId,
     sellerName
   };
-
-  if (items.length === 0) {
-    markTableAsFreed(normalized);
-  } else {
-    // Si la mesa se está poblando de nuevo, remover cualquier marca de tiempo de liberación previa
-    if (freedTablesTimestamps[normalized] && nowMs > freedTablesTimestamps[normalized]) {
-      delete freedTablesTimestamps[normalized];
-    }
-    drafts[normalized] = draftOrder;
-    try {
-      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
-    } catch (e) {
-      console.error('Error al guardar en localStorage:', e);
-    }
+  // Si la mesa se está modificando, remover cualquier marca de tiempo de liberación previa
+  if (freedTablesTimestamps[normalized] && nowMs > freedTablesTimestamps[normalized]) {
+    delete freedTablesTimestamps[normalized];
+  }
+  drafts[normalized] = draftOrder;
+  try {
+    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+  } catch (e) {
+    console.error('Error al guardar en localStorage:', e);
   }
 
   return draftOrder;
