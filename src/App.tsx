@@ -85,7 +85,7 @@ export default function App() {
         if (keys.length > 0) {
           setSyncState('syncing');
           for (const tNum of keys) {
-            const success = await syncTableToFirestore(drafts[tNum], activeTables, rawMaterials, drinks, dishes, combos);
+            const success = await syncTableToFirestore(drafts[tNum], activeTables, rawMaterials, drinks, dishes, combos, orders);
             if (success) {
               removeLocalDraft(tNum);
             }
@@ -121,7 +121,7 @@ export default function App() {
     // 2. Intento de Sincronización en Nube según Latencia
     if (latencyInfo.isOnline && latencyInfo.isFast) {
       setSyncState('syncing');
-      syncTableToFirestore(draft, activeTables, rawMaterials, drinks, dishes, combos).then((success) => {
+      syncTableToFirestore(draft, activeTables, rawMaterials, drinks, dishes, combos, orders).then((success) => {
         if (success) {
           setSyncState('synced');
           removeLocalDraft(targetTable);
@@ -613,7 +613,7 @@ export default function App() {
       
       try {
         if (latencyInfo.isOnline && latencyInfo.isFast) {
-          const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos);
+          const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
           if (success) {
             removeLocalDraft(targetTable);
           }
@@ -1784,7 +1784,7 @@ export default function App() {
             if (targetTable && targetTable.toLowerCase() !== 'para llevar' && completedOrder.id.startsWith('preview')) {
               const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name);
               if (latencyInfo.isOnline && latencyInfo.isFast) {
-                await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos);
+                await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
               }
             }
           }}

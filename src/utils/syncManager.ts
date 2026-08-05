@@ -1,6 +1,6 @@
 import { doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { TableOrder, CartItem, RawMaterial, Drink, Dish } from '../types';
+import { TableOrder, CartItem, RawMaterial, Drink, Dish, Order } from '../types';
 
 const DRAFTS_STORAGE_KEY = 'chifa_active_tables_drafts';
 
@@ -123,14 +123,33 @@ export async function syncTableToFirestore(
   rawMaterials: RawMaterial[],
   drinks: Drink[],
   dishes: Dish[],
-  combos: any[]
+  combos: any[],
+  orders: Order[] = []
 ): Promise<boolean> {
   const syncStartTime = Date.now();
 
   // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
   if (isTableFreed(tableOrder.tableNumber, tableOrder.updatedAtTimestamp || syncStartTime)) {
-    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${tableOrder.tableNumber} fue liberada/cobrada.`);
+    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${tableOrder.tableNumber} fue liberada/cobrada en memoria.`);
     return true;
+  }
+
+  // NUEVO: Verificar si existe una nota de venta (order) reciente para esta mesa
+  if (orders && orders.length > 0) {
+    const tableOrders = orders.filter(o => o.tableNumber === tableOrder.tableNumber);
+    if (tableOrders.length > 0) {
+      tableOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const latestOrder = tableOrders[0];
+      const orderTime = new Date(latestOrder.date).getTime();
+      const draftTime = tableOrder.updatedAtTimestamp || syncStartTime;
+      
+      // Si la orden se creó DESPUÉS del último guardado del borrador (con un pequeño margen)
+      // o si la orden se acaba de crear (en los últimos 3 minutos), consideramos el borrador obsoleto.
+      if (orderTime >= draftTime - 60000 || (syncStartTime - orderTime < 3 * 60 * 1000)) {
+        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${tableOrder.tableNumber}. Borrando borrador obsoleto.`);
+        return true; 
+      }
+    }
   }
 
   try {
