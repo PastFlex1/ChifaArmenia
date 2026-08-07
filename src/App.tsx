@@ -660,62 +660,65 @@ export default function App() {
       
       setIsCheckingOut(true);
   
-    const targetTableId = (activeTableId || tableNumber).trim();
-    const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
-    const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
-
-    const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
-    const profit = cartTotal - totalCost;
-    
-    const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
-    const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
-
-    // Always record the exact moment of payment/checkout as the sale date
-    const orderDate = new Date().toISOString();
-
-    const newOrder: Order = {
-      id: Date.now().toString(),
-      orderNumber: nextOrderNumber,
-      date: orderDate,
-      customerName: '', // Customer name has been removed
-      tableNumber: targetTableId,
-      items: [...cart],
-      total: cartTotal,
-      totalCost,
-      profit,
-      ivaRate: isHolidayIva ? 8 : 15,
-      sellerId: currentUser?.id,
-      sellerName: currentUser?.name,
-      status: 'active'
-    };
-
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'counters', 'orders'), { count: increment(1) }, { merge: true });
-
-    newRawMaterials.forEach((rm, index) => {
-      if (rm.stock !== rawMaterials[index].stock) {
-        batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
-      }
-    });
-
-    newDrinks.forEach((drink, index) => {
-      if (drink.stock !== drinks[index].stock) {
-        batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
-      }
-    });
-
-    batch.set(doc(db, 'orders', newOrder.id), newOrder);
-    if (targetTableId && targetTableId.toLowerCase() !== 'para llevar') {
-      batch.delete(doc(db, 'active_tables', targetTableId));
-      batch.set(doc(db, 'freed_tables', targetTableId), {
-        tableNumber: targetTableId,
-        freedAt: orderDate,
-        freedAtTimestamp: Date.now(),
-        reason: 'checkout'
-      });
-    }
-
     try {
+      const targetTableId = (activeTableId || tableNumber).trim();
+      const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
+
+      const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
+      const profit = cartTotal - totalCost;
+      
+      const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
+      const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
+
+      // Always record the exact moment of payment/checkout as the sale date
+      const orderDate = new Date().toISOString();
+
+      const newOrder: Order = {
+        id: Date.now().toString(),
+        orderNumber: nextOrderNumber,
+        date: orderDate,
+        customerName: '', // Customer name has been removed
+        tableNumber: targetTableId,
+        items: cart.map(item => ({
+          ...item,
+          printedQuantity: item.printedQuantity || 0
+        })),
+        total: cartTotal,
+        totalCost,
+        profit,
+        ivaRate: isHolidayIva ? 8 : 15,
+        sellerId: currentUser?.id || '',
+        sellerName: currentUser?.name || '',
+        status: 'active'
+      };
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'counters', 'orders'), { count: increment(1) }, { merge: true });
+
+      newRawMaterials.forEach((rm, index) => {
+        if (rm.stock !== rawMaterials[index].stock) {
+          batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+        }
+      });
+
+      newDrinks.forEach((drink, index) => {
+        if (drink.stock !== drinks[index].stock) {
+          batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+        }
+      });
+
+      batch.set(doc(db, 'orders', newOrder.id), newOrder);
+      if (targetTableId && targetTableId.toLowerCase() !== 'para llevar') {
+        batch.delete(doc(db, 'active_tables', targetTableId));
+        batch.set(doc(db, 'freed_tables', targetTableId), {
+          tableNumber: targetTableId,
+          freedAt: orderDate,
+          freedAtTimestamp: Date.now(),
+          reason: 'checkout'
+        });
+      }
+
       await batch.commit();
       setOrderCounter(nextOrderNumber);
       setCompletedOrder(newOrder);
@@ -724,9 +727,15 @@ export default function App() {
       }
       clearCart();
       setActiveTableId(null);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error confirming order:", e);
-      Swal.fire({ title: 'Error', text: 'Error al confirmar el pedido. Revisa tu conexión.', icon: 'error', confirmButtonColor: '#000' });
+      const errMsg = e?.message || 'Ocurrió un error inesperado en Firestore.';
+      Swal.fire({
+        title: 'Error al confirmar el pedido',
+        text: navigator.onLine ? `Detalle: ${errMsg}` : 'Error de conexión. Verifica tu acceso a internet.',
+        icon: 'error',
+        confirmButtonColor: '#000'
+      });
     } finally {
       setIsCheckingOut(false);
     }
@@ -881,9 +890,15 @@ export default function App() {
       batch.update(doc(db, 'orders', orderId), { status: 'voided' });
 
       await batch.commit();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error voiding order:", e);
-      Swal.fire({ title: 'Error', text: 'Error al anular el pedido. Revisa tu conexión.', icon: 'error', confirmButtonColor: '#000' });
+      const errMsg = e?.message || 'Ocurrió un error inesperado.';
+      Swal.fire({
+        title: 'Error al anular el pedido',
+        text: navigator.onLine ? `Detalle: ${errMsg}` : 'Error de conexión. Revisa tu internet.',
+        icon: 'error',
+        confirmButtonColor: '#000'
+      });
     }
   };
 
