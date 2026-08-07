@@ -15,10 +15,10 @@ export interface LatencyStatus {
 // Registro en memoria de timestamps en que las mesas fueron liberadas/cobradas
 const freedTablesTimestamps: Record<string, number> = {};
 
-export function markTableAsFreed(tableNumber: string): void {
+export function markTableAsFreed(tableNumber: string, timestamp?: number): void {
   const normalized = tableNumber.trim();
   if (!normalized) return;
-  freedTablesTimestamps[normalized] = Date.now();
+  freedTablesTimestamps[normalized] = timestamp || Date.now();
   removeLocalDraft(normalized);
 }
 
@@ -31,8 +31,15 @@ export function isTableFreed(tableNumber: string, orderTimestamp?: number): bool
 }
 
 // Persistencia Local Instantánea (0ms)
-export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string): TableOrder {
+export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string): TableOrder | null {
   const normalized = tableNumber.trim();
+  if (!normalized) return null;
+
+  if (!items || items.length === 0) {
+    removeLocalDraft(normalized);
+    return null;
+  }
+
   const drafts = getAllLocalDrafts();
   const existing = drafts[normalized];
   const nowMs = Date.now();
@@ -126,27 +133,35 @@ export async function syncTableToFirestore(
   combos: any[],
   orders: Order[] = []
 ): Promise<boolean> {
+  if (!tableOrder || !tableOrder.tableNumber) return true;
+  const normalizedTable = tableOrder.tableNumber.trim();
   const syncStartTime = Date.now();
+  const draftTime = tableOrder.updatedAtTimestamp || syncStartTime;
 
-  // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
-  if (isTableFreed(tableOrder.tableNumber, tableOrder.updatedAtTimestamp || syncStartTime)) {
-    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${tableOrder.tableNumber} fue liberada/cobrada en memoria.`);
+  // Si el borrador no tiene items, no escribirlo en active_tables
+  if (!tableOrder.items || tableOrder.items.length === 0) {
+    removeLocalDraft(normalizedTable);
     return true;
   }
 
-  // NUEVO: Verificar si existe una nota de venta (order) reciente para esta mesa
+  // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
+  if (isTableFreed(normalizedTable, draftTime)) {
+    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${normalizedTable} fue liberada/cobrada.`);
+    removeLocalDraft(normalizedTable);
+    return true;
+  }
+
+  // Verificar si existe una nota de venta (order) reciente para esta mesa
   if (orders && orders.length > 0) {
-    const tableOrders = orders.filter(o => o.tableNumber === tableOrder.tableNumber);
+    const tableOrders = orders.filter(o => o.tableNumber && o.tableNumber.trim().toLowerCase() === normalizedTable.toLowerCase());
     if (tableOrders.length > 0) {
       tableOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const latestOrder = tableOrders[0];
       const orderTime = new Date(latestOrder.date).getTime();
-      const draftTime = tableOrder.updatedAtTimestamp || syncStartTime;
       
-      // Si la orden se creó DESPUÉS del último guardado del borrador (con un pequeño margen)
-      // o si la orden se acaba de crear (en los últimos 3 minutos), consideramos el borrador obsoleto.
-      if (orderTime >= draftTime - 60000 || (syncStartTime - orderTime < 3 * 60 * 1000)) {
-        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${tableOrder.tableNumber}. Borrando borrador obsoleto.`);
+      if (orderTime >= draftTime - 60000) {
+        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${normalizedTable}. Borrando borrador obsoleto.`);
+        removeLocalDraft(normalizedTable);
         return true; 
       }
     }

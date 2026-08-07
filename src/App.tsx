@@ -109,14 +109,15 @@ export default function App() {
 
   // Guardado Automático Inteligente (Solo para mesas ya activas/abiertas)
   useEffect(() => {
-    // Si no hay mesa activa seleccionada, no auto-guardar borradores como mesas en Firestore
-    if (!activeTableId) return;
+    // Si no hay mesa activa seleccionada o el carrito está vacío, no auto-guardar borradores
+    if (!activeTableId || cart.length === 0) return;
 
     const targetTable = activeTableId.trim();
     if (!targetTable) return;
 
     // 1. Guardado Local Instantáneo (0ms)
     const draft = saveLocalDraft(targetTable, cart, currentUser?.id, currentUser?.name);
+    if (!draft) return;
 
     // 2. Intento de Sincronización en Nube según Latencia
     if (latencyInfo.isOnline && latencyInfo.isFast) {
@@ -196,6 +197,20 @@ export default function App() {
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     });
 
+    const unsubFreedTables = onSnapshot(collection(db, 'freed_tables'), snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const data = change.doc.data();
+          if (data && data.tableNumber) {
+            const freedAtMs = data.freedAtTimestamp || (data.freedAt ? new Date(data.freedAt).getTime() : Date.now());
+            markTableAsFreed(data.tableNumber, freedAtMs);
+          }
+        }
+      });
+    }, (error) => {
+      console.error("Error fetching freed_tables:", error);
+    });
+
     const counterRef = doc(db, 'counters', 'orders');
     const unsubCounter = onSnapshot(counterRef, (docSnap: any) => {
       if (docSnap.exists()) {
@@ -212,6 +227,7 @@ export default function App() {
       unsubDrinks();
       unsubCombos();
       unsubTables();
+      unsubFreedTables();
       unsubCounter();
     };
   }, []);
@@ -262,7 +278,7 @@ export default function App() {
             const orderTime = new Date(order.date).getTime();
             // If the order was created in the last 2 minutes, mark as freed locally
             if (Date.now() - orderTime < 2 * 60 * 1000) {
-              markTableAsFreed(order.tableNumber);
+              markTableAsFreed(order.tableNumber, orderTime);
               // If we are currently looking at this table, clear the cart to prevent ghost saves
               if (activeTableId === order.tableNumber) {
                 setCart([]);
@@ -691,6 +707,12 @@ export default function App() {
     batch.set(doc(db, 'orders', newOrder.id), newOrder);
     if (targetTableId && targetTableId.toLowerCase() !== 'para llevar') {
       batch.delete(doc(db, 'active_tables', targetTableId));
+      batch.set(doc(db, 'freed_tables', targetTableId), {
+        tableNumber: targetTableId,
+        freedAt: orderDate,
+        freedAtTimestamp: Date.now(),
+        reason: 'checkout'
+      });
     }
 
     try {
@@ -744,6 +766,12 @@ export default function App() {
       });
       if (targetTableId.toLowerCase() !== 'para llevar') {
         batch.delete(doc(db, 'active_tables', targetTableId));
+        batch.set(doc(db, 'freed_tables', targetTableId), {
+          tableNumber: targetTableId,
+          freedAt: new Date().toISOString(),
+          freedAtTimestamp: Date.now(),
+          reason: 'freed'
+        });
       }
       
       await batch.commit();
