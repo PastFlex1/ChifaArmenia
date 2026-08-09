@@ -107,33 +107,7 @@ export default function App() {
     };
   }, [activeTables, rawMaterials, drinks, dishes, combos, isDbLoaded]);
 
-  // Guardado Automático Inteligente (Solo para mesas ya activas/abiertas)
-  useEffect(() => {
-    // Si no hay mesa activa seleccionada o el carrito está vacío, no auto-guardar borradores
-    if (!activeTableId || cart.length === 0) return;
 
-    const targetTable = activeTableId.trim();
-    if (!targetTable) return;
-
-    // 1. Guardado Local Instantáneo (0ms)
-    const draft = saveLocalDraft(targetTable, cart, currentUser?.id, currentUser?.name);
-    if (!draft) return;
-
-    // 2. Intento de Sincronización en Nube según Latencia
-    if (latencyInfo.isOnline && latencyInfo.isFast) {
-      setSyncState('syncing');
-      syncTableToFirestore(draft, activeTables, rawMaterials, drinks, dishes, combos, orders).then((success) => {
-        if (success) {
-          setSyncState('synced');
-          removeLocalDraft(targetTable);
-        } else {
-          setSyncState('local_slow');
-        }
-      });
-    } else {
-      setSyncState(latencyInfo.isOnline ? 'local_slow' : 'offline');
-    }
-  }, [cart, activeTableId]);
 
   // Limpiar carrito si la mesa activa fue liberada remotamente
   useEffect(() => {
@@ -587,14 +561,9 @@ export default function App() {
   }, [cart]);
 
   const handleTableClick = (tNumber: string) => {
-    // Si había una mesa previa con items, asegurar guardado local antes de cambiar
-    if (activeTableId && cart.length > 0 && !isTableFreed(activeTableId)) {
-      saveLocalDraft(activeTableId, cart, currentUser?.id, currentUser?.name);
-    }
-
     // Cargar borrador local o mesa de Firestore
     const localDraft = getLocalDraft(tNumber);
-    const firestoreTable = activeTables.find(t => t.tableNumber === tNumber);
+    const firestoreTable = activeTables.find(t => t.tableNumber.trim().toLowerCase() === tNumber.trim().toLowerCase());
     
     const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
 
