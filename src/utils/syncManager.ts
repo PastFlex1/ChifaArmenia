@@ -18,12 +18,13 @@ const freedTablesTimestamps: Record<string, number> = {};
 export function markTableAsFreed(tableNumber: string, timestamp?: number): void {
   const normalized = tableNumber.trim();
   if (!normalized) return;
-  freedTablesTimestamps[normalized] = timestamp || Date.now();
+  const ts = timestamp || Date.now();
+  freedTablesTimestamps[normalized.toLowerCase()] = ts;
   removeLocalDraft(normalized);
 }
 
 export function isTableFreed(tableNumber: string, orderTimestamp?: number): boolean {
-  const normalized = tableNumber.trim();
+  const normalized = tableNumber.trim().toLowerCase();
   const freedAt = freedTablesTimestamps[normalized];
   if (!freedAt) return false;
   if (!orderTimestamp) return true;
@@ -41,7 +42,8 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
   }
 
   const drafts = getAllLocalDrafts();
-  const existing = drafts[normalized];
+  const existingKey = Object.keys(drafts).find(key => key.trim().toLowerCase() === normalized.toLowerCase());
+  const existing = existingKey ? drafts[existingKey] : null;
   const nowMs = Date.now();
   
   const draftOrder: TableOrder = {
@@ -54,9 +56,10 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
     sellerId,
     sellerName
   };
-  // Si la mesa se está modificando, remover cualquier marca de tiempo de liberación previa
-  if (freedTablesTimestamps[normalized] && nowMs > freedTablesTimestamps[normalized]) {
-    delete freedTablesTimestamps[normalized];
+  // Si la mesa se está modificando, remover cualquier marca de tiempo de liberación previa si es anterior
+  const normLower = normalized.toLowerCase();
+  if (freedTablesTimestamps[normLower] && nowMs > freedTablesTimestamps[normLower]) {
+    delete freedTablesTimestamps[normLower];
   }
   drafts[normalized] = draftOrder;
   try {
@@ -69,18 +72,81 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
 }
 
 export function getLocalDraft(tableNumber: string): TableOrder | null {
+  const normalized = tableNumber.trim().toLowerCase();
+  if (!normalized) return null;
   const drafts = getAllLocalDrafts();
-  return drafts[tableNumber.trim()] || null;
+  const foundKey = Object.keys(drafts).find(key => key.trim().toLowerCase() === normalized);
+  if (!foundKey) return null;
+  const draft = drafts[foundKey];
+  if (!draft) return null;
+
+  // Si la mesa está liberada o la fecha del borrador es previa a la liberación, borrar borrador y retornar null
+  if (isTableFreed(normalized, draft.updatedAtTimestamp)) {
+    removeLocalDraft(normalized);
+    return null;
+  }
+  return draft;
 }
 
 export function removeLocalDraft(tableNumber: string): void {
-  const normalized = tableNumber.trim();
+  const normalized = tableNumber.trim().toLowerCase();
+  if (!normalized) return;
   const drafts = getAllLocalDrafts();
-  delete drafts[normalized];
-  try {
-    localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
-  } catch (e) {
-    console.error('Error al eliminar de localStorage:', e);
+  let changed = false;
+  Object.keys(drafts).forEach(key => {
+    if (key.trim().toLowerCase() === normalized) {
+      delete drafts[key];
+      changed = true;
+    }
+  });
+  if (changed) {
+    try {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    } catch (e) {
+      console.error('Error al eliminar de localStorage:', e);
+    }
+  }
+}
+
+export function purgeDraftsForCompletedOrders(orders: Order[]): void {
+  if (!orders || orders.length === 0) return;
+  const drafts = getAllLocalDrafts();
+  const keys = Object.keys(drafts);
+  if (keys.length === 0) return;
+
+  const latestOrderByTable: Record<string, number> = {};
+  orders.forEach(order => {
+    if (order.tableNumber && order.tableNumber.trim().toLowerCase() !== 'para llevar') {
+      const normTable = order.tableNumber.trim().toLowerCase();
+      const orderMs = new Date(order.date).getTime();
+      if (!latestOrderByTable[normTable] || orderMs > latestOrderByTable[normTable]) {
+        latestOrderByTable[normTable] = orderMs;
+      }
+    }
+  });
+
+  let changed = false;
+  keys.forEach(key => {
+    const draft = drafts[key];
+    const normKey = key.trim().toLowerCase();
+    const orderMs = latestOrderByTable[normKey];
+    if (orderMs) {
+      const draftMs = draft.updatedAtTimestamp || (draft.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
+      if (orderMs >= draftMs - 60000) {
+        delete drafts[key];
+        const normLower = normKey;
+        freedTablesTimestamps[normLower] = orderMs;
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) {
+    try {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    } catch (e) {
+      console.error('Error al purgar borradores obsoletos:', e);
+    }
   }
 }
 

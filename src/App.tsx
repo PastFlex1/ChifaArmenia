@@ -16,7 +16,7 @@ import { MesasView } from './components/MesasView';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, SyncState, LatencyStatus } from './utils/syncManager';
+import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, SyncState, LatencyStatus } from './utils/syncManager';
 
 export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
@@ -79,7 +79,7 @@ export default function App() {
       if (!isMounted) return;
       setLatencyInfo(lat);
 
-      if (lat.isOnline && lat.isFast) {
+      if (lat.isOnline && lat.isFast && isDbLoaded) {
         const drafts = getAllLocalDrafts();
         const keys = Object.keys(drafts);
         if (keys.length > 0) {
@@ -105,7 +105,7 @@ export default function App() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeTables, rawMaterials, drinks, dishes, combos]);
+  }, [activeTables, rawMaterials, drinks, dishes, combos, isDbLoaded]);
 
   // Guardado Automático Inteligente (Solo para mesas ya activas/abiertas)
   useEffect(() => {
@@ -135,9 +135,32 @@ export default function App() {
     }
   }, [cart, activeTableId]);
 
+  // Limpiar carrito si la mesa activa fue liberada remotamente
+  useEffect(() => {
+    const handleTableFreed = (e: any) => {
+      const freedTable = e.detail;
+      if (activeTableId && activeTableId.trim().toLowerCase() === freedTable.trim().toLowerCase()) {
+        Swal.fire({
+          title: 'Mesa Liberada',
+          text: `La mesa ${freedTable} fue cobrada o liberada desde otra computadora.`,
+          icon: 'info',
+          confirmButtonColor: '#000'
+        });
+        setCart([]);
+        setActiveTableId(null);
+        setTableNumber('');
+        if (currentView === 'pos') {
+           setCurrentView('mesas');
+        }
+      }
+    };
+    window.addEventListener('tableFreed', handleTableFreed);
+    return () => window.removeEventListener('tableFreed', handleTableFreed);
+  }, [activeTableId, currentView]);
+
   // Firebase Realtime Subscriptions
   useEffect(() => {
-    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, tables: false };
+    let loadedState = { users: false, rm: false, dishes: false, drinks: false, combos: false, tables: false, freed_tables: false };
 
     const checkComplete = () => {
       if (Object.values(loadedState).every(Boolean)) {
@@ -190,6 +213,16 @@ export default function App() {
     });
 
     const unsubTables = onSnapshot(collection(db, 'active_tables'), snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'removed') {
+          const removedData = change.doc.data();
+          const tNum = removedData?.tableNumber || change.doc.id;
+          if (tNum) {
+            markTableAsFreed(tNum);
+            window.dispatchEvent(new CustomEvent('tableFreed', { detail: tNum }));
+          }
+        }
+      });
       setActiveTables(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as TableOrder)));
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     }, (error) => {
@@ -204,11 +237,14 @@ export default function App() {
           if (data && data.tableNumber) {
             const freedAtMs = data.freedAtTimestamp || (data.freedAt ? new Date(data.freedAt).getTime() : Date.now());
             markTableAsFreed(data.tableNumber, freedAtMs);
+            window.dispatchEvent(new CustomEvent('tableFreed', { detail: data.tableNumber }));
           }
         }
       });
+      if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
     }, (error) => {
       console.error("Error fetching freed_tables:", error);
+      if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
     });
 
     const counterRef = doc(db, 'counters', 'orders');
@@ -271,25 +307,28 @@ export default function App() {
     }
 
     const unsubOrders = onSnapshot(qOrders, snapshot => {
+      const fetchedOrders = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order));
+
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
           const order = change.doc.data() as Order;
-          if (order.tableNumber && order.tableNumber.toLowerCase() !== 'para llevar') {
+          if (order.tableNumber && order.tableNumber.trim().toLowerCase() !== 'para llevar') {
             const orderTime = new Date(order.date).getTime();
-            // If the order was created in the last 2 minutes, mark as freed locally
-            if (Date.now() - orderTime < 2 * 60 * 1000) {
-              markTableAsFreed(order.tableNumber, orderTime);
-              // If we are currently looking at this table, clear the cart to prevent ghost saves
-              if (activeTableId === order.tableNumber) {
-                setCart([]);
-                setActiveTableId(null);
-                setTableNumber('');
+            markTableAsFreed(order.tableNumber, orderTime);
+            if (activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
+              setCart([]);
+              setActiveTableId(null);
+              setTableNumber('');
+              if (currentView === 'pos') {
+                setCurrentView('mesas');
               }
             }
           }
         }
       });
-      setOrders(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order)));
+
+      purgeDraftsForCompletedOrders(fetchedOrders);
+      setOrders(fetchedOrders);
     }, (error) => {
       console.error("Error fetching orders:", error);
     });
@@ -537,7 +576,7 @@ export default function App() {
 
   const handleTableClick = (tNumber: string) => {
     // Si había una mesa previa con items, asegurar guardado local antes de cambiar
-    if (activeTableId && cart.length > 0) {
+    if (activeTableId && cart.length > 0 && !isTableFreed(activeTableId)) {
       saveLocalDraft(activeTableId, cart, currentUser?.id, currentUser?.name);
     }
 
