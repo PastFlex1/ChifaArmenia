@@ -336,6 +336,18 @@ export default function App() {
     return () => unsubOrders();
   }, [timeRange, customDateRange]);
 
+  // Purga continua y automática de localStorage para mesas cobradas
+  useEffect(() => {
+    const runPurge = () => {
+      if (orders && orders.length > 0) {
+        purgeDraftsForCompletedOrders(orders);
+      }
+    };
+    runPurge();
+    const timer = setInterval(runPurge, 3000);
+    return () => clearInterval(timer);
+  }, [orders]);
+
   // Derived POS Items from Inventories
   const posItems: MenuItem[] = useMemo(() => {
     const d: MenuItem[] = dishes.map(dish => {

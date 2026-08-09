@@ -110,7 +110,14 @@ export function removeLocalDraft(tableNumber: string): void {
 
 export function purgeDraftsForCompletedOrders(orders: Order[]): void {
   if (!orders || orders.length === 0) return;
-  const drafts = getAllLocalDrafts();
+  const raw = localStorage.getItem(DRAFTS_STORAGE_KEY);
+  if (!raw) return;
+  let drafts: Record<string, TableOrder>;
+  try {
+    drafts = JSON.parse(raw);
+  } catch {
+    return;
+  }
   const keys = Object.keys(drafts);
   if (keys.length === 0) return;
 
@@ -134,10 +141,12 @@ export function purgeDraftsForCompletedOrders(orders: Order[]): void {
       const draftMs = draft.updatedAtTimestamp || (draft.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
       if (orderMs >= draftMs - 60000) {
         delete drafts[key];
-        const normLower = normKey;
-        freedTablesTimestamps[normLower] = orderMs;
+        freedTablesTimestamps[normKey] = orderMs;
         changed = true;
       }
+    } else if (isTableFreed(normKey, draft.updatedAtTimestamp)) {
+      delete drafts[key];
+      changed = true;
     }
   });
 
@@ -153,7 +162,24 @@ export function purgeDraftsForCompletedOrders(orders: Order[]): void {
 export function getAllLocalDrafts(): Record<string, TableOrder> {
   try {
     const raw = localStorage.getItem(DRAFTS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const drafts: Record<string, TableOrder> = JSON.parse(raw);
+    
+    let changed = false;
+    Object.keys(drafts).forEach(key => {
+      const draft = drafts[key];
+      const normKey = key.trim().toLowerCase();
+      if (isTableFreed(normKey, draft?.updatedAtTimestamp)) {
+        delete drafts[key];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    }
+
+    return drafts;
   } catch (e) {
     console.error('Error al leer localStorage:', e);
     return {};
