@@ -1493,15 +1493,13 @@ export default function App() {
                 >
                   {isCheckingOut ? '...' : 'Cobrar y Liberar'}
                 </button>
-                {currentUser?.role === 'Administrador' && (
-                  <button
-                    onClick={handleFreeTableWithoutCheckout}
-                    disabled={isCheckingOut}
-                    className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                  >
-                    {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
-                  </button>
-                )}
+                <button
+                  onClick={handleFreeTableWithoutCheckout}
+                  disabled={isCheckingOut}
+                  className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
+                >
+                  {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
+                </button>
               </div>
             ) : (
               <div className="flex gap-2 flex-1">

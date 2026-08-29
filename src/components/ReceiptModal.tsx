@@ -243,13 +243,16 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                   <h1 className="text-2xl font-black mb-1 text-center w-full">CHIFA MEI HUA ARMENIA</h1>
                   <p className="text-xs font-bold uppercase mb-1">ALVAREZ ZAMORA RUTH GARDENIA</p>
                   <p className="text-xs font-bold uppercase mb-2">RUC: 0923809529001</p>
-                  <div className="border-t-2 border-dashed border-black w-full mt-4 pt-4 text-left font-sans">
-                    <p className="text-xs font-bold uppercase mb-1">Impreso: {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</p>
-                    <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
-                    {order.tableNumber && (
-                      <p className="text-xs font-bold uppercase mb-1">MESAS: {order.tableNumber}</p>
+                    {order.id.startsWith('preview-') ? (
+                      <div className="my-1 py-1 px-2 border-2 border-black bg-amber-200 text-center font-black text-[11px] uppercase tracking-tight">
+                        *** PRE-CUENTA (SOLO BORRADOR) ***
+                      </div>
+                    ) : (
+                      <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
                     )}
-                  </div>
+                    {order.tableNumber && (
+                      <p className="text-xs font-bold uppercase mb-1">MESA: {order.tableNumber}</p>
+                    )}
                 </div>
 
                 <div className="flex flex-col gap-1 mb-4 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
