@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff, Bike } from 'lucide-react';
 import { CATEGORIES } from './data';
 import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -28,6 +28,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableNumber, setTableNumber] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -553,6 +554,7 @@ export default function App() {
     }
     setCart([]);
     setTableNumber('');
+    setCustomerName('');
     setCashReceived('');
   };
 
@@ -560,17 +562,75 @@ export default function App() {
     return cart.reduce((total, item) => total + (item.menuItem.price * item.quantity), 0);
   }, [cart]);
 
+  const isDeliveryApp = (tbl: string) => {
+    const norm = (tbl || '').trim().toLowerCase();
+    return norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos') ||
+           norm === 'rappi' ||
+           norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber');
+  };
+
+  const isNonTableType = (tbl: string) => {
+    const norm = (tbl || '').trim().toLowerCase();
+    return isDeliveryApp(norm) || norm === 'domicilio' || norm === 'para llevar';
+  };
+
   const handleTableClick = (tNumber: string) => {
+    const norm = tNumber.trim().toLowerCase();
+    const isSpecialType = isNonTableType(norm);
+
     // Cargar borrador local o mesa de Firestore
     const localDraft = getLocalDraft(tNumber);
-    const firestoreTable = activeTables.find(t => t.tableNumber.trim().toLowerCase() === tNumber.trim().toLowerCase());
+    const firestoreTable = activeTables.find(t => t.tableNumber.trim().toLowerCase() === norm);
     
     const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
 
     setCart(loadedItems);
     setTableNumber(tNumber);
-    setActiveTableId(tNumber);
+    if (isSpecialType && !firestoreTable && !localDraft) {
+      setActiveTableId(null);
+    } else {
+      setActiveTableId(tNumber);
+    }
     setCurrentView('pos');
+  };
+
+  const handleDeleteTable = async (tableNum: string) => {
+    const result = await Swal.fire({
+      title: '¿Liberar comanda?',
+      text: `Se descartará la comanda de "${tableNum}" y se liberará de Firebase.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#B91C1C',
+      cancelButtonColor: '#1A1A1A',
+      confirmButtonText: 'Sí, Liberar Comanda',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'active_tables', tableNum));
+        batch.set(doc(db, 'freed_tables', tableNum), {
+          tableNumber: tableNum,
+          freedAt: new Date().toISOString(),
+          freedAtTimestamp: Date.now(),
+          reason: 'manual_delete'
+        });
+        await batch.commit();
+        removeLocalDraft(tableNum);
+        markTableAsFreed(tableNum);
+        Swal.fire({
+          title: 'Comanda Liberada',
+          text: `La comanda de "${tableNum}" ha sido descartada exitosamente.`,
+          icon: 'success',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } catch (err) {
+        console.error('Error al liberar comanda:', err);
+        Swal.fire('Error', 'No se pudo liberar la comanda.', 'error');
+      }
+    }
   };
 
     const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[]) => {
@@ -641,6 +701,17 @@ export default function App() {
         return;
       }
 
+      const norm = targetTable.toLowerCase();
+      if (isDeliveryApp(norm)) {
+        Swal.fire({
+          title: 'Cobro Obligatorio',
+          text: `Los pedidos de ${targetTable} no se pueden guardar como mesa abierta o borrador. Por favor, usa la opción "Cobrar Directo".`,
+          icon: 'warning',
+          confirmButtonColor: '#B91C1C'
+        });
+        return;
+      }
+
       const itemsToSave = Array.isArray(customCart) ? customCart : cart;
       if (itemsToSave.length === 0 || isCheckingOut) return;
       setIsCheckingOut(true);
@@ -698,7 +769,7 @@ export default function App() {
         id: Date.now().toString(),
         orderNumber: nextOrderNumber,
         date: orderDate,
-        customerName: '', // Customer name has been removed
+        customerName: customerName.trim(),
         tableNumber: targetTableId,
         items: cart.map(item => ({
           ...item,
@@ -729,7 +800,7 @@ export default function App() {
       });
 
       batch.set(doc(db, 'orders', newOrder.id), newOrder);
-      if (targetTableId && targetTableId.toLowerCase() !== 'para llevar') {
+      if (targetTableId && !isNonTableType(targetTableId)) {
         batch.delete(doc(db, 'active_tables', targetTableId));
         batch.set(doc(db, 'freed_tables', targetTableId), {
           tableNumber: targetTableId,
@@ -793,7 +864,7 @@ export default function App() {
       newDrinks.forEach((drink, index) => {
         if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
       });
-      if (targetTableId.toLowerCase() !== 'para llevar') {
+      if (targetTableId && !isNonTableType(targetTableId)) {
         batch.delete(doc(db, 'active_tables', targetTableId));
         batch.set(doc(db, 'freed_tables', targetTableId), {
           tableNumber: targetTableId,
@@ -824,7 +895,7 @@ export default function App() {
       id: 'preview-' + Date.now(),
       orderNumber: orderCounter + 1,
       date: new Date().toISOString(),
-      customerName: '',
+      customerName: customerName.trim(),
       tableNumber: tableNumber || 'S/N',
       items: [...cart],
       total: cartTotal,
@@ -1212,6 +1283,7 @@ export default function App() {
             <MesasView 
               activeTables={activeTables}
               onSelectTable={handleTableClick}
+              onDeleteTable={handleDeleteTable}
               totalTables={30}
             />
           ) : currentView === 'materia_prima' ? (
@@ -1358,18 +1430,123 @@ export default function App() {
         </div>
           
         <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
+          {/* Selector Rápido de Tipo de Comanda */}
+          <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
+            <button
+              type="button"
+              disabled={Boolean(activeTableId)}
+              onClick={() => {
+                if (!activeTableId && isNonTableType(tableNumber)) {
+                  setTableNumber('');
+                }
+              }}
+              className={`flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
+                !isNonTableType(tableNumber)
+                  ? 'bg-[#1A1A1A] text-[#FFD700] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+              }`}
+            >
+              <UtensilsCrossed className="w-3 h-3" /> Mesa
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(activeTableId)}
+              onClick={() => {
+                if (!activeTableId) setTableNumber('Domicilio');
+              }}
+              className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
+                (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar')
+                  ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+              }`}
+            >
+              <ShoppingBag className="w-3 h-3" /> Domicilio
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(activeTableId)}
+              onClick={() => {
+                if (!activeTableId) setTableNumber('PedidosYa');
+              }}
+              className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
+                (tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
+                  ? 'bg-[#B91C1C] text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] animate-pulse'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+              }`}
+            >
+              <Bike className="w-3 h-3" /> PedidosYa
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(activeTableId)}
+              onClick={() => {
+                if (!activeTableId) setTableNumber('Rappi');
+              }}
+              className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
+                tableNumber.trim().toLowerCase() === 'rappi'
+                  ? 'bg-orange-600 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+              }`}
+            >
+              🧡 Rappi
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(activeTableId)}
+              onClick={() => {
+                if (!activeTableId) setTableNumber('Uber Eats');
+              }}
+              className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
+                (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
+                  ? 'bg-emerald-950 text-emerald-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+              }`}
+            >
+              🟢 Uber
+            </button>
+          </div>
+
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />
+              {(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya') ? (
+                <Bike className="h-4 w-4 text-[#B91C1C]" />
+              ) : tableNumber.trim().toLowerCase() === 'rappi' ? (
+                <span className="text-xs">🧡</span>
+              ) : (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats') ? (
+                <span className="text-xs">🟢</span>
+              ) : (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') ? (
+                <ShoppingBag className="h-4 w-4 text-emerald-700" />
+              ) : (
+                <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />
+              )}
             </div>
             <input
               type="text"
-              placeholder="Mesa o Para llevar (Obligatorio)"
-              className="w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium"
+              placeholder="Mesa, Domicilio, PedidosYa, Rappi, Uber"
+              className={`w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ${
+                isDeliveryApp(tableNumber) ? 'bg-red-50 text-red-900 border-red-800' : ''
+              }`}
               value={tableNumber}
               onChange={(e) => setTableNumber(e.target.value)}
+              disabled={Boolean(activeTableId)}
             />
           </div>
+
+          {/* Campo de Nombre del Cliente / Dirección (SOLO PARA DOMICILIO) */}
+          {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') && (
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <User className="h-4 w-4 text-emerald-700" />
+              </div>
+              <input
+                type="text"
+                placeholder="Cliente / Dirección (Ej: Juan Pérez - Av 9 Oct)"
+                className="w-full pl-9 pr-3 py-2 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ring-2 ring-emerald-300"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         {/* Cart Items */}
@@ -1502,21 +1679,34 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="flex gap-2 flex-1">
-                <button
-                  onClick={() => handleSaveTable()}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
-                >
-                  Guardar en Mesa
-                </button>
-                <button
-                  onClick={handleCheckout}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-                >
-                  {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
-                </button>
+              <div className="flex flex-col gap-2 flex-1">
+                {isDeliveryApp(tableNumber) && (
+                  <div className="w-full py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
+                    <Bike className="w-4 h-4 text-[#B91C1C] animate-bounce" />
+                    <span>{tableNumber} exige <strong>Cobrar Directo</strong></span>
+                  </div>
+                )}
+                <div className="flex gap-2 flex-1">
+                  <button
+                    onClick={() => handleSaveTable()}
+                    disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
+                    className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                    title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
+                  >
+                    Guardar en Mesa
+                  </button>
+                  <button
+                    onClick={handleCheckout}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className={`flex-1 py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${
+                      isDeliveryApp(tableNumber)
+                        ? 'bg-[#B91C1C] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-800'
+                        : 'bg-black text-[#FFD700] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]'
+                    }`}
+                  >
+                    {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Order, UserAccount } from '../types';
-import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download } from 'lucide-react';
+import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download, Bike, ShoppingBag, UtensilsCrossed } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import Swal from 'sweetalert2';
@@ -19,6 +19,7 @@ interface SalesViewProps {
 
 export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
+  const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
 
   const handleVoidOrderConfirm = async (orderId: string) => {
@@ -124,12 +125,75 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
       }
     }
 
+    if (selectedOrderType === 'pedidos_ya') {
+      filtered = filtered.filter(o => {
+        const norm = (o.tableNumber || '').trim().toLowerCase();
+        return norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos');
+      });
+    } else if (selectedOrderType === 'rappi') {
+      filtered = filtered.filter(o => (o.tableNumber || '').trim().toLowerCase() === 'rappi');
+    } else if (selectedOrderType === 'uber') {
+      filtered = filtered.filter(o => {
+        const norm = (o.tableNumber || '').trim().toLowerCase();
+        return norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber');
+      });
+    } else if (selectedOrderType === 'domicilio') {
+      filtered = filtered.filter(o => {
+        const norm = (o.tableNumber || '').trim().toLowerCase();
+        return norm === 'domicilio' || norm === 'para llevar';
+      });
+    } else if (selectedOrderType === 'mesas') {
+      filtered = filtered.filter(o => {
+        const norm = (o.tableNumber || '').trim().toLowerCase();
+        return norm !== 'pedidosya' && norm !== 'pedidos ya' && !norm.startsWith('pedidos') &&
+               norm !== 'rappi' && norm !== 'uber' && norm !== 'uber eats' && !norm.startsWith('uber') &&
+               norm !== 'domicilio' && norm !== 'para llevar';
+      });
+    }
+
     return filtered;
-  }, [orders, selectedSeller, timeRange, customDateRange]);
+  }, [orders, selectedSeller, selectedOrderType, timeRange, customDateRange]);
 
   const formatPrice = (price: number) => `USD/ ${price.toFixed(2)}`;
 
   const validOrders = filteredOrders.filter(o => o.status !== 'voided');
+
+  const orderTypeStats = useMemo(() => {
+    let mesasCount = 0, mesasTotal = 0;
+    let domicilioCount = 0, domicilioTotal = 0;
+    let pyCount = 0, pyTotal = 0;
+    let rappiCount = 0, rappiTotal = 0;
+    let uberCount = 0, uberTotal = 0;
+
+    // Calcular estadísticas globales con base en la lista filtrada de tiempo/vendedor
+    const activeNonVoided = orders.filter(o => {
+      if (o.status === 'voided') return false;
+      if (selectedSeller !== 'all' && o.sellerId !== selectedSeller) return false;
+      return true;
+    });
+
+    activeNonVoided.forEach(o => {
+      const norm = (o.tableNumber || '').trim().toLowerCase();
+      if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) {
+        pyCount++;
+        pyTotal += o.total;
+      } else if (norm === 'rappi') {
+        rappiCount++;
+        rappiTotal += o.total;
+      } else if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) {
+        uberCount++;
+        uberTotal += o.total;
+      } else if (norm === 'domicilio' || norm === 'para llevar') {
+        domicilioCount++;
+        domicilioTotal += o.total;
+      } else {
+        mesasCount++;
+        mesasTotal += o.total;
+      }
+    });
+
+    return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal };
+  }, [orders, selectedSeller]);
 
   const totalRevenue = validOrders.reduce((sum, order) => sum + order.total, 0);
   const totalCost = validOrders.reduce((sum, order) => sum + order.totalCost, 0);
@@ -290,6 +354,63 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
         >
           Personalizado
         </button>
+
+        <div className="w-px h-8 bg-black/20 mx-2 self-center shrink-0"></div>
+
+        {/* Selector de Tipo de Pedido */}
+        <button
+          onClick={() => setSelectedOrderType('all')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
+             selectedOrderType === 'all' ? 'bg-black text-[#FFD700] translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
+          }`}
+        >
+          Todos los Tipos
+        </button>
+
+        <button
+          onClick={() => setSelectedOrderType('pedidos_ya')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
+             selectedOrderType === 'pedidos_ya' ? 'bg-[#B91C1C] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-red-50 text-red-700 border-red-300'
+          }`}
+        >
+          <Bike className="w-4 h-4" /> PedidosYa ({orderTypeStats.pyCount})
+        </button>
+
+        <button
+          onClick={() => setSelectedOrderType('rappi')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
+             selectedOrderType === 'rappi' ? 'bg-orange-600 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-orange-50 text-orange-700 border-orange-300'
+          }`}
+        >
+          🧡 Rappi ({orderTypeStats.rappiCount})
+        </button>
+
+        <button
+          onClick={() => setSelectedOrderType('uber')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
+             selectedOrderType === 'uber' ? 'bg-emerald-800 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300'
+          }`}
+        >
+          🟢 Uber ({orderTypeStats.uberCount})
+        </button>
+
+        <button
+          onClick={() => setSelectedOrderType('domicilio')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
+             selectedOrderType === 'domicilio' ? 'bg-emerald-600 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" /> Domicilio ({orderTypeStats.domicilioCount})
+        </button>
+
+        <button
+          onClick={() => setSelectedOrderType('mesas')}
+          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
+             selectedOrderType === 'mesas' ? 'bg-blue-700 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
+          }`}
+        >
+          <UtensilsCrossed className="w-4 h-4" /> Mesas ({orderTypeStats.mesasCount})
+        </button>
       </div>
 
       {timeRange === 'custom' && (
@@ -345,6 +466,48 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
             <h3 className="text-xs font-black uppercase tracking-widest opacity-100 text-white">Ganancia Neta</h3>
           </div>
           <p className="text-3xl font-black text-[#FFD700]">{formatPrice(totalProfit)}</p>
+        </div>
+
+        {/* Tarjeta de Resumen PedidosYa */}
+        <div className="bg-red-50 p-4 sm:p-5 rounded-2xl border-2 border-red-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#B91C1C] text-white flex items-center justify-center border-2 border-black">
+                <Bike className="w-4 h-4" />
+              </div>
+              <h3 className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">PedidosYa</h3>
+            </div>
+            <span className="text-xs font-black bg-red-200 text-red-900 px-2 py-0.5 rounded-full border border-red-400">{orderTypeStats.pyCount}</span>
+          </div>
+          <p className="text-2xl font-black text-[#B91C1C]">{formatPrice(orderTypeStats.pyTotal)}</p>
+        </div>
+
+        {/* Tarjeta de Resumen Rappi */}
+        <div className="bg-orange-50 p-4 sm:p-5 rounded-2xl border-2 border-orange-800 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center border-2 border-black font-black text-xs">
+                🧡
+              </div>
+              <h3 className="text-xs font-black uppercase tracking-widest text-orange-900">Rappi</h3>
+            </div>
+            <span className="text-xs font-black bg-orange-200 text-orange-900 px-2 py-0.5 rounded-full border border-orange-400">{orderTypeStats.rappiCount}</span>
+          </div>
+          <p className="text-2xl font-black text-orange-900">{formatPrice(orderTypeStats.rappiTotal)}</p>
+        </div>
+
+        {/* Tarjeta de Resumen Uber */}
+        <div className="bg-emerald-950 p-4 sm:p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start text-white flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-emerald-500 text-black flex items-center justify-center border-2 border-black font-black text-xs">
+                🟢
+              </div>
+              <h3 className="text-xs font-black uppercase tracking-widest text-emerald-400">Uber Eats</h3>
+            </div>
+            <span className="text-xs font-black bg-emerald-900 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-600">{orderTypeStats.uberCount}</span>
+          </div>
+          <p className="text-2xl font-black text-emerald-400">{formatPrice(orderTypeStats.uberTotal)}</p>
         </div>
       </div>
 
@@ -495,8 +658,39 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                     </div>
                     {order.tableNumber && (
                       <div className="flex flex-col">
-                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Mesa</span>
-                        <span>{order.tableNumber}</span>
+                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Tipo / Ubicación</span>
+                        {(() => {
+                          const norm = order.tableNumber.trim().toLowerCase();
+                          if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) {
+                            return (
+                              <span className="bg-red-100 text-[#B91C1C] border border-red-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                <Bike className="w-3 h-3" /> PedidosYa
+                              </span>
+                            );
+                          }
+                          if (norm === 'rappi') {
+                            return (
+                              <span className="bg-orange-100 text-orange-800 border border-orange-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                🧡 Rappi
+                              </span>
+                            );
+                          }
+                          if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) {
+                            return (
+                              <span className="bg-emerald-950 text-emerald-400 border border-emerald-700 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                🟢 Uber Eats
+                              </span>
+                            );
+                          }
+                          if (norm === 'domicilio' || norm === 'para llevar') {
+                            return (
+                              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                <ShoppingBag className="w-3 h-3" /> Domicilio
+                              </span>
+                            );
+                          }
+                          return <span>Mesa {order.tableNumber}</span>;
+                        })()}
                       </div>
                     )}
                     {order.customerName && (

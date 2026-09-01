@@ -251,14 +251,23 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                       <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
                     )}
                     {order.tableNumber && (
-                      <p className="text-xs font-bold uppercase mb-1">MESA: {order.tableNumber}</p>
+                      <p className="text-xs font-bold uppercase mb-1">
+                        {(() => {
+                          const norm = order.tableNumber.trim().toLowerCase();
+                          if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 TIPO: PEDIDOS YA';
+                          if (norm === 'rappi') return '🧡 TIPO: RAPPI';
+                          if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 TIPO: UBER EATS';
+                          if (norm === 'domicilio' || norm === 'para llevar') return '🏠 TIPO: DOMICILIO';
+                          return `MESA: ${order.tableNumber}`;
+                        })()}
+                      </p>
                     )}
                 </div>
 
                 <div className="flex flex-col gap-1 mb-4 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>CLIENTE:</span>
-                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px] font-black uppercase text-xs pl-1 text-right">{order.customerName || ''}</span>
                   </div>
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>C.I:</span>
@@ -352,12 +361,29 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 <div className="text-center mb-4">
                   <h1 className="text-xl font-black mb-1 uppercase">COMANDA</h1>
                   <div className="border-t-2 border-black border-dashed w-full mt-2 pt-2">
-                    {order.tableNumber && <h2 className="text-lg font-black uppercase">MESA: {order.tableNumber}</h2>}
+                    {order.tableNumber && (
+                      <h2 className="text-lg font-black uppercase">
+                        {(() => {
+                          const norm = order.tableNumber.trim().toLowerCase();
+                          if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 PEDIDOS YA';
+                          if (norm === 'rappi') return '🧡 RAPPI';
+                          if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 UBER EATS';
+                          if (norm === 'domicilio' || norm === 'para llevar') return '🏠 DOMICILIO';
+                          return `MESA: ${order.tableNumber}`;
+                        })()}
+                      </h2>
+                    )}
                     <p className="text-sm mt-1 font-bold">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
                   </div>
                 </div>
 
                 <div className="mb-6 text-sm font-bold font-sans">
+                  {order.customerName && (
+                    <div className="flex justify-between items-center mb-2 bg-black text-white p-1.5 rounded text-xs font-black">
+                      <span className="uppercase opacity-80">CLIENTE / DIR:</span>
+                      <span className="uppercase text-sm tracking-wide text-[#FFD700] truncate max-w-[65%]">{order.customerName}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between mb-1">
                     <span className="opacity-60 uppercase">Hora:</span>
                     <span>{new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
