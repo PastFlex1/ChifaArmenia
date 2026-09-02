@@ -5,15 +5,14 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import path from 'path';
 
-// CONFIGURACIÓN DE SUCURSAL E IMPRESORAS
-const TARGET_BRANCH_ID = process.env.BRANCH_ID || '1'; // '1' = Matriz, '2' = Sucursal 2
-const PRINTER_IP_KITCHEN = process.env.PRINTER_IP_KITCHEN || '192.168.100.60'; // IP de Cocina
-const CAJA_IS_USB = process.env.CAJA_IS_USB !== 'false'; // true si la impresora de caja es USB compartida
-const PRINTER_SHARED_NAME_CAJA = process.env.PRINTER_SHARED_NAME_CAJA || 'caja'; // Nombre compartido en Windows
-const PRINTER_IP_CUSTOMER = process.env.PRINTER_IP_CUSTOMER || '192.168.100.X'; // IP si no es USB
+// CONFIGURACIÓN DE IMPRESORAS - SUCURSAL 2
+const TARGET_BRANCH_ID = '2'; // 2 = Sucursal 2
+const PRINTER_IP_KITCHEN = '192.168.10.17'; // IP Impresora Cocina Sucursal 2
+const CAJA_IS_USB = true; // Impresora de caja USB compartida
+const PRINTER_SHARED_NAME_CAJA = 'caja'; // Nombre compartido de la impresora USB de caja en Windows
 const PRINTER_PORT = 9100;
 
-// Configuración de Firebase (copiada de tu frontend)
+// Configuración de Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyC3JbrBLOAiX99IGWroPSsCqx9Zj42QQoQ",
   authDomain: "chifa-52865.firebaseapp.com",
@@ -51,7 +50,7 @@ const CUT = Buffer.from([0x1D, 0x56, 0x41, 0x10]);
 // Función principal de impresión
 function printTicket(jobId, order, ticketType) {
   return new Promise((resolve, reject) => {
-    console.log(`[+] Intentando imprimir trabajo ${jobId} (Tipo: ${ticketType})...`);
+    console.log(`[+] Intentando imprimir trabajo ${jobId} en SUCURSAL 2 (Tipo: ${ticketType})...`);
       try {
         let buffers = [];
         const writeData = (data) => {
@@ -68,17 +67,16 @@ function printTicket(jobId, order, ticketType) {
           writeData(ALIGN_CENTER);
           writeData(BOLD_ON);
           writeData(textToBuffer('CHIFA MEI HUA ARMENIA'));
-          if (order.branchName) {
-            writeData(textToBuffer(order.branchName.toUpperCase()));
-          }
+          writeData(textToBuffer('SUCURSAL 2'));
           writeData(NORMAL_SIZE);
           writeData(textToBuffer('ALVAREZ ZAMORA RUTH GARDENIA'));
           writeData(textToBuffer('RUC: 0923809529001'));
           writeData(textToBuffer('--------------------------------'));
           
           writeData(ALIGN_LEFT);
-          writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`));
           writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          writeData(textToBuffer(`FECHA: ${new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour12: false })}`));
+          
           if (order.tableNumber) {
             const normT = order.tableNumber.trim().toLowerCase();
             if (normT === 'pedidosya' || normT === 'pedidos ya' || normT.startsWith('pedidos')) writeData(textToBuffer('TIPO: PEDIDOS YA'));
@@ -93,38 +91,38 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('C.I: ...........................'));
           writeData(textToBuffer('Correo: ........................'));
           writeData(textToBuffer('Telf: ..........................'));
-          writeData(textToBuffer('Dir: ...........................'));
-          writeData(textToBuffer('F.Nacimiento: ..................'));
-          writeData(textToBuffer('--------------------------------'));
-          
-          writeData(textToBuffer('\n'));
-          writeData(ALIGN_CENTER);
-          writeData(BOLD_ON);
-          writeData(textToBuffer('PROPINA: $ __________________'));
-          writeData(BOLD_OFF);
-          writeData(textToBuffer('\n\n'));
-          
-          writeData(ALIGN_LEFT);
-          writeData(textToBuffer('--------------------------------'));
-          writeData(textToBuffer('CANT   DESCRIPCION       TOTAL'));
           writeData(textToBuffer('--------------------------------'));
           
           order.items.forEach(item => {
-            let name = item.menuItem.name.substring(0, 16).padEnd(16);
-            let qty = item.quantity.toString().padEnd(4);
-            let price = formatPrice(item.quantity * item.menuItem.price).padStart(10);
-            writeData(textToBuffer(`${qty} ${name} ${price}`));
+            const name = item.menuItem.name.toUpperCase();
+            const qty = String(item.quantity).padStart(2, ' ');
+            const price = formatPrice(item.menuItem.price * item.quantity).padStart(10, ' ');
+            
+            if (name.length > 18) {
+              writeData(textToBuffer(`${qty} ${name.substring(0, 18)}`));
+              writeData(textToBuffer(`${' '.repeat(21)}${price}`));
+            } else {
+              const line = `${qty} ${name.padEnd(18, ' ')}${price}`;
+              writeData(textToBuffer(line));
+            }
           });
           
           writeData(textToBuffer('--------------------------------'));
+          
+          const appliedIvaRate = order.ivaRate || 15;
+          const ivaDivisor = appliedIvaRate === 8 ? 1.08 : 1.15;
+          const subtotal = order.total / ivaDivisor;
+          const ivaAmount = order.total - subtotal;
+          
           writeData(ALIGN_RIGHT);
-          writeData(textToBuffer(`SUBTOTAL: ${formatPrice(order.total / 1.15)}`));
-          writeData(textToBuffer(`IVA 15%: ${formatPrice(order.total - (order.total / 1.15))}`));
+          writeData(textToBuffer(`SUBTOTAL: ${formatPrice(subtotal)}`));
+          writeData(textToBuffer(`IVA (${appliedIvaRate}%): ${formatPrice(ivaAmount)}`));
+          
           writeData(BOLD_ON);
           writeData(DOUBLE_HEIGHT);
           writeData(textToBuffer(`TOTAL: ${formatPrice(order.total)}`));
-          writeData(NORMAL_SIZE);
           writeData(BOLD_OFF);
+          writeData(NORMAL_SIZE);
           
           writeData(ALIGN_CENTER);
           writeData(textToBuffer('--------------------------------'));
@@ -132,12 +130,11 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer(`ATENDIDO POR ${order.sellerName ? order.sellerName.toUpperCase() : 'CAJERO'}`));
           
         } else {
+          // COMANDA DE COCINA
           writeData(ALIGN_CENTER);
           writeData(BOLD_ON);
           writeData(textToBuffer('COMANDA'));
-          if (order.branchName) {
-            writeData(textToBuffer(order.branchName.toUpperCase()));
-          }
+          writeData(textToBuffer('SUCURSAL 2'));
           
           if (order.tableNumber) {
             const norm = order.tableNumber.trim().toLowerCase();
@@ -175,22 +172,20 @@ function printTicket(jobId, order, ticketType) {
         
         writeData('\n\n\n\n');
         writeData(CUT);
-        
-        const finalBuffer = Buffer.concat(buffers);
 
-        // LOGICA DE IMPRESIÓN (USB COMPARTIDA O RED TCP)
+        const finalBuffer = Buffer.concat(buffers);
+        
+        // IMPRESIÓN POR USB O RED
         if (ticketType === 'customer' && CAJA_IS_USB) {
            const tempFile = path.join(process.cwd(), `ticket_${jobId}.bin`);
            fs.writeFileSync(tempFile, finalBuffer);
            
-           // En Windows, enviar archivo raw a impresora compartida
            const computerName = process.env.COMPUTERNAME || '127.0.0.1';
            const command = `copy /b "${tempFile}" "\\\\${computerName}\\${PRINTER_SHARED_NAME_CAJA}"`;
            console.log(`[+] Enviando ticket por USB compartido: ${command}`);
            
            exec(command, (error) => {
-              try { fs.unlinkSync(tempFile); } catch(e){} // Limpiar archivo temporal
-              
+              try { fs.unlinkSync(tempFile); } catch(e){}
               if (error) {
                  reject(new Error(`Error enviando a USB: ¿Compartiste la impresora con el nombre '${PRINTER_SHARED_NAME_CAJA}'?`));
               } else {
@@ -199,16 +194,16 @@ function printTicket(jobId, order, ticketType) {
            });
            
         } else {
-           // IMPRESION POR RED IP (COCINA)
-           const TARGET_IP = ticketType === 'kitchen' ? PRINTER_IP_KITCHEN : PRINTER_IP_CUSTOMER;
-           console.log(`[+] Conectando a IP ${TARGET_IP}:${PRINTER_PORT} para ticket de ${ticketType}...`);
+           // IMPRESIÓN POR IP RED (COCINA SUCURSAL 2: 192.168.10.17)
+           const TARGET_IP = PRINTER_IP_KITCHEN;
+           console.log(`[+] Conectando a IP ${TARGET_IP}:${PRINTER_PORT} para comanda de cocina...`);
            
            const client = new net.Socket();
            client.setTimeout(3000);
 
            client.on('timeout', () => {
              client.destroy();
-             reject(new Error(`Timeout de conexión a la impresora ${TARGET_IP}. ¿Está encendida?`));
+             reject(new Error(`Timeout de conexión a impresora de cocina ${TARGET_IP}. ¿Está encendida?`));
            });
 
            client.on('error', (err) => {
@@ -231,13 +226,13 @@ function printTicket(jobId, order, ticketType) {
 
 // Iniciar listener de Firebase
 console.log(`========================================`);
-console.log(`☁️ SERVIDOR DE COLA DE IMPRESION INICIADO`);
+console.log(`☁️ SERVIDOR DE IMPRESION SUCURSAL 2`);
 console.log(`========================================`);
 console.log(`Conectado a Firebase: ${firebaseConfig.projectId}`);
-console.log(`Impresora Cajera: ${PRINTER_IP_CUSTOMER}:${PRINTER_PORT}`);
-console.log(`Impresora Cocina: ${PRINTER_IP_KITCHEN}:${PRINTER_PORT}`);
-console.log(`Escuchando nuevos tickets en tiempo real...`);
-console.log(`Deje esta ventana negra abierta mientras trabaje.`);
+console.log(`Sucursal ID: ${TARGET_BRANCH_ID}`);
+console.log(`Impresora Caja: USB Compartida ('\\\\COMPUTADORA\\${PRINTER_SHARED_NAME_CAJA}')`);
+console.log(`Impresora Cocina: IP ${PRINTER_IP_KITCHEN}:${PRINTER_PORT}`);
+console.log(`Escuchando pedidos de SUCURSAL 2 en tiempo real...`);
 console.log(`========================================`);
 
 const q = query(collection(db, "print_jobs"), where("status", "==", "pending"));
@@ -249,16 +244,14 @@ onSnapshot(q, (snapshot) => {
       const jobId = change.doc.id;
       const jobBranch = job.order?.branchId || '1';
 
-      // Ignorar trabajos de otra sucursal
-      if (TARGET_BRANCH_ID && jobBranch !== TARGET_BRANCH_ID) {
+      // Filtrar e ignorar impresiones que pertenezcan a la otra sucursal
+      if (jobBranch !== TARGET_BRANCH_ID) {
         return;
       }
       
       try {
         await printTicket(jobId, job.order, job.ticketType);
-        console.log(`[OK] Trabajo ${jobId} impreso con éxito.`);
-        
-        // Actualizar en Firebase para no volver a imprimir
+        console.log(`[OK] Trabajo ${jobId} impreso en Sucursal 2 con éxito.`);
         await updateDoc(doc(db, "print_jobs", jobId), {
           status: "printed",
           printedAt: new Date()

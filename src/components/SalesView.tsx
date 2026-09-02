@@ -18,6 +18,8 @@ interface SalesViewProps {
 }
 
 export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
+  const defaultBranch = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+  const [selectedBranch, setSelectedBranch] = useState<string>(defaultBranch);
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
   const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
@@ -83,6 +85,10 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
   const filteredOrders = useMemo(() => {
     let filtered = orders;
     
+    if (selectedBranch !== 'all') {
+      filtered = filtered.filter(o => (o.branchId || '1') === selectedBranch);
+    }
+
     if (selectedSeller !== 'all') {
       filtered = filtered.filter(o => o.sellerId === selectedSeller);
     }
@@ -165,9 +171,10 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     let rappiCount = 0, rappiTotal = 0;
     let uberCount = 0, uberTotal = 0;
 
-    // Calcular estadísticas globales con base en la lista filtrada de tiempo/vendedor
+    // Calcular estadísticas globales con base en la lista filtrada de tiempo/vendedor/sucursal
     const activeNonVoided = orders.filter(o => {
       if (o.status === 'voided') return false;
+      if (selectedBranch !== 'all' && (o.branchId || '1') !== selectedBranch) return false;
       if (selectedSeller !== 'all' && o.sellerId !== selectedSeller) return false;
       return true;
     });
@@ -282,139 +289,201 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
-      {/* Filters (Horizontal Top Bar) */}
-      <div className="shrink-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        {currentUser?.role === 'Administrador' && (
-          <>
+      {/* Filters (Organized Control Bar with Pill Buttons) */}
+      <div className="shrink-0 flex flex-col gap-3 bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+        
+        {/* Row 1: Sucursal & Vendedor */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Sucursal */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
+            <span className="text-[10px] font-black uppercase text-slate-500 px-2">Sucursal:</span>
             <button
-              onClick={() => setSelectedSeller('all')}
-              className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-                selectedSeller === 'all'
-                  ? 'bg-[#FFD700] text-black translate-y-[1px] shadow-none'
-                  : 'bg-white hover:bg-slate-50'
+              type="button"
+              onClick={() => setSelectedBranch('1')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                selectedBranch === '1'
+                  ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
+                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
               }`}
             >
-              General (Todos)
+              📍 Matriz
             </button>
-            {sellers.map((seller) => (
+            <button
+              type="button"
+              onClick={() => setSelectedBranch('2')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                selectedBranch === '2'
+                  ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
+                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              📍 Sucursal 2
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedBranch('all')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                selectedBranch === 'all'
+                  ? 'bg-black text-[#FFD700] shadow-none translate-y-[1px]'
+                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              📍 Todas
+            </button>
+          </div>
+
+          {/* Vendedor (si es Administrador) */}
+          {currentUser?.role === 'Administrador' && (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black overflow-x-auto scrollbar-hide">
+              <span className="text-[10px] font-black uppercase text-slate-500 px-2 shrink-0">Vendedor:</span>
               <button
-                key={seller.id}
-                onClick={() => setSelectedSeller(seller.id)}
-                className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-2 ${
-                  selectedSeller === seller.id
-                    ? 'bg-[#FFD700] text-black translate-y-[1px] shadow-none'
-                    : 'bg-white hover:bg-slate-50'
+                type="button"
+                onClick={() => setSelectedSeller('all')}
+                className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all whitespace-nowrap ${
+                  selectedSeller === 'all'
+                    ? 'bg-[#FFD700] text-black shadow-none translate-y-[1px]'
+                    : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                 }`}
               >
-                <Users className="w-4 h-4" />
-                {seller.name}
+                General (Todos)
               </button>
-            ))}
-            <div className="w-px h-8 bg-black/20 mx-2 self-center shrink-0"></div>
-          </>
-        )}
+              {sellers.map((seller) => (
+                <button
+                  type="button"
+                  key={seller.id}
+                  onClick={() => setSelectedSeller(seller.id)}
+                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                    selectedSeller === seller.id
+                      ? 'bg-[#FFD700] text-black shadow-none translate-y-[1px]'
+                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  {seller.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <button
-          onClick={() => setTimeRange('all')}
-          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             timeRange === 'all' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Histórico
-        </button>
-        <button
-          onClick={() => setTimeRange('day')}
-          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             timeRange === 'day' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Hoy
-        </button>
-        <button
-          onClick={() => setTimeRange('week')}
-          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             timeRange === 'week' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Esta Semana
-        </button>
-        <button
-          onClick={() => setTimeRange('year')}
-          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             timeRange === 'year' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Este Año
-        </button>
-        <button
-          onClick={() => setTimeRange('custom')}
-          className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             timeRange === 'custom' ? 'bg-[#1A1A1A] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Personalizado
-        </button>
+        {/* Row 2: Período de Tiempo & Canal */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t-2 border-slate-100">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
+            <span className="text-[10px] font-black uppercase text-slate-500 px-2">Período:</span>
+            <button
+              type="button"
+              onClick={() => setTimeRange('day')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                 timeRange === 'day' ? 'bg-[#1A1A1A] text-white shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Hoy
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('week')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                 timeRange === 'week' ? 'bg-[#1A1A1A] text-white shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Esta Semana
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('year')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                 timeRange === 'year' ? 'bg-[#1A1A1A] text-white shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Este Año
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('all')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                 timeRange === 'all' ? 'bg-[#1A1A1A] text-white shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Histórico
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeRange('custom')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                 timeRange === 'custom' ? 'bg-[#1A1A1A] text-white shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Personalizado
+            </button>
+          </div>
 
-        <div className="w-px h-8 bg-black/20 mx-2 self-center shrink-0"></div>
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black overflow-x-auto scrollbar-hide">
+            <span className="text-[10px] font-black uppercase text-slate-500 px-2 shrink-0">Canal:</span>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('all')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap ${
+                 selectedOrderType === 'all' ? 'bg-black text-[#FFD700] shadow-none translate-y-[1px]' : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              Todos los Tipos
+            </button>
 
-        {/* Selector de Tipo de Pedido */}
-        <button
-          onClick={() => setSelectedOrderType('all')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-             selectedOrderType === 'all' ? 'bg-black text-[#FFD700] translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          Todos los Tipos
-        </button>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('pedidos_ya')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'pedidos_ya' ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]' : 'bg-red-50 text-red-800 hover:bg-red-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              <Bike className="w-3.5 h-3.5" /> PedidosYa ({orderTypeStats.pyCount})
+            </button>
 
-        <button
-          onClick={() => setSelectedOrderType('pedidos_ya')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
-             selectedOrderType === 'pedidos_ya' ? 'bg-[#B91C1C] text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-red-50 text-red-700 border-red-300'
-          }`}
-        >
-          <Bike className="w-4 h-4" /> PedidosYa ({orderTypeStats.pyCount})
-        </button>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('rappi')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'rappi' ? 'bg-orange-600 text-white shadow-none translate-y-[1px]' : 'bg-orange-50 text-orange-800 hover:bg-orange-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              🧡 Rappi ({orderTypeStats.rappiCount})
+            </button>
 
-        <button
-          onClick={() => setSelectedOrderType('rappi')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
-             selectedOrderType === 'rappi' ? 'bg-orange-600 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-orange-50 text-orange-700 border-orange-300'
-          }`}
-        >
-          🧡 Rappi ({orderTypeStats.rappiCount})
-        </button>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('uber')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'uber' ? 'bg-emerald-950 text-emerald-300 shadow-none translate-y-[1px]' : 'bg-emerald-900 text-emerald-200 hover:bg-emerald-800 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              🟢 Uber ({orderTypeStats.uberCount})
+            </button>
 
-        <button
-          onClick={() => setSelectedOrderType('uber')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
-             selectedOrderType === 'uber' ? 'bg-emerald-800 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300'
-          }`}
-        >
-          🟢 Uber ({orderTypeStats.uberCount})
-        </button>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('domicilio')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'domicilio' ? 'bg-emerald-600 text-white shadow-none translate-y-[1px]' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" /> Domicilio ({orderTypeStats.domicilioCount})
+            </button>
 
-        <button
-          onClick={() => setSelectedOrderType('domicilio')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
-             selectedOrderType === 'domicilio' ? 'bg-emerald-600 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300'
-          }`}
-        >
-          <ShoppingBag className="w-4 h-4" /> Domicilio ({orderTypeStats.domicilioCount})
-        </button>
-
-        <button
-          onClick={() => setSelectedOrderType('mesas')}
-          className={`px-4 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none flex items-center gap-1.5 ${
-             selectedOrderType === 'mesas' ? 'bg-blue-700 text-white translate-y-[1px] shadow-none' : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          <UtensilsCrossed className="w-4 h-4" /> Mesas ({orderTypeStats.mesasCount})
-        </button>
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('mesas')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'mesas' ? 'bg-blue-700 text-white shadow-none translate-y-[1px]' : 'bg-blue-50 text-blue-800 hover:bg-blue-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              <UtensilsCrossed className="w-3.5 h-3.5" /> Mesas ({orderTypeStats.mesasCount})
+            </button>
+          </div>
+        </div>
       </div>
 
       {timeRange === 'custom' && (
-        <div className="shrink-0 flex gap-3 items-center overflow-x-auto pb-2 scrollbar-hide">
+        <div className="shrink-0 flex gap-3 items-center overflow-x-auto pb-1 scrollbar-hide">
           <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
             <span className="text-xs font-black uppercase">Desde:</span>
             <input 
@@ -436,78 +505,78 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
         </div>
       )}
 
-      {/* Top Stats - Swipeable on mobile */}
-      <div className="flex gap-3 sm:gap-4 shrink-0 overflow-x-auto pb-2 scrollbar-hide snap-x">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[240px] flex-1 snap-start flex flex-col justify-between">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-[#1A1A1A] text-[#FFD700] flex items-center justify-center">
-              <DollarSign className="w-4 h-4" />
+      {/* Top Stats Cards Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 shrink-0">
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-7 h-7 rounded-full bg-[#1A1A1A] text-[#FFD700] flex items-center justify-center shrink-0">
+              <DollarSign className="w-3.5 h-3.5" />
             </div>
-            <h3 className="text-xs font-black uppercase tracking-widest opacity-60">Ingresos Totales</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-wider opacity-60">Ingresos Totales</h3>
           </div>
-          <p className="text-3xl font-black text-[#1A1A1A]">{formatPrice(totalRevenue)}</p>
+          <p className="text-xl lg:text-2xl font-black text-[#1A1A1A]">{formatPrice(totalRevenue)}</p>
         </div>
         
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[240px] flex-1 snap-start flex flex-col justify-between">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center border-2 border-black">
-              <Activity className="w-4 h-4" />
+        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center border-2 border-black shrink-0">
+              <Activity className="w-3.5 h-3.5" />
             </div>
-            <h3 className="text-xs font-black uppercase tracking-widest opacity-60">Costo Producción</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-wider opacity-60">Costo Producción</h3>
           </div>
-          <p className="text-3xl font-black text-slate-600">{formatPrice(totalCost)}</p>
+          <p className="text-xl lg:text-2xl font-black text-slate-600">{formatPrice(totalCost)}</p>
         </div>
 
-        <div className="bg-[#1A1A1A] p-4 sm:p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[240px] flex-1 snap-start text-[#FFD700] flex flex-col justify-between">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-full bg-white text-[#1A1A1A] flex items-center justify-center border-2 border-black">
-              <TrendingUp className="w-4 h-4" />
+        <div className="bg-[#1A1A1A] p-3.5 sm:p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-[#FFD700] flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="w-7 h-7 rounded-full bg-white text-[#1A1A1A] flex items-center justify-center border-2 border-black shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
-            <h3 className="text-xs font-black uppercase tracking-widest opacity-100 text-white">Ganancia Neta</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-wider opacity-100 text-white">Ganancia Neta</h3>
           </div>
-          <p className="text-3xl font-black text-[#FFD700]">{formatPrice(totalProfit)}</p>
+          <p className="text-xl lg:text-2xl font-black text-[#FFD700]">{formatPrice(totalProfit)}</p>
         </div>
 
         {/* Tarjeta de Resumen PedidosYa */}
-        <div className="bg-red-50 p-4 sm:p-5 rounded-2xl border-2 border-red-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#B91C1C] text-white flex items-center justify-center border-2 border-black">
-                <Bike className="w-4 h-4" />
+        <div className="bg-red-50 p-3.5 sm:p-4 rounded-2xl border-2 border-red-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full bg-[#B91C1C] text-white flex items-center justify-center border-2 border-black shrink-0">
+                <Bike className="w-3.5 h-3.5" />
               </div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">PedidosYa</h3>
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-[#B91C1C]">PedidosYa</h3>
             </div>
-            <span className="text-xs font-black bg-red-200 text-red-900 px-2 py-0.5 rounded-full border border-red-400">{orderTypeStats.pyCount}</span>
+            <span className="text-[10px] font-black bg-red-200 text-red-900 px-1.5 py-0.5 rounded-full border border-red-400">{orderTypeStats.pyCount}</span>
           </div>
-          <p className="text-2xl font-black text-[#B91C1C]">{formatPrice(orderTypeStats.pyTotal)}</p>
+          <p className="text-xl lg:text-2xl font-black text-[#B91C1C]">{formatPrice(orderTypeStats.pyTotal)}</p>
         </div>
 
         {/* Tarjeta de Resumen Rappi */}
-        <div className="bg-orange-50 p-4 sm:p-5 rounded-2xl border-2 border-orange-800 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center border-2 border-black font-black text-xs">
+        <div className="bg-orange-50 p-3.5 sm:p-4 rounded-2xl border-2 border-orange-800 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full bg-orange-600 text-white flex items-center justify-center border-2 border-black font-black text-[10px] shrink-0">
                 🧡
               </div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-orange-900">Rappi</h3>
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-orange-900">Rappi</h3>
             </div>
-            <span className="text-xs font-black bg-orange-200 text-orange-900 px-2 py-0.5 rounded-full border border-orange-400">{orderTypeStats.rappiCount}</span>
+            <span className="text-[10px] font-black bg-orange-200 text-orange-900 px-1.5 py-0.5 rounded-full border border-orange-400">{orderTypeStats.rappiCount}</span>
           </div>
-          <p className="text-2xl font-black text-orange-900">{formatPrice(orderTypeStats.rappiTotal)}</p>
+          <p className="text-xl lg:text-2xl font-black text-orange-900">{formatPrice(orderTypeStats.rappiTotal)}</p>
         </div>
 
         {/* Tarjeta de Resumen Uber */}
-        <div className="bg-emerald-950 p-4 sm:p-5 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] min-w-[200px] flex-1 snap-start text-white flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-emerald-500 text-black flex items-center justify-center border-2 border-black font-black text-xs">
+        <div className="bg-emerald-950 p-3.5 sm:p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-white flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full bg-emerald-500 text-black flex items-center justify-center border-2 border-black font-black text-[10px] shrink-0">
                 🟢
               </div>
-              <h3 className="text-xs font-black uppercase tracking-widest text-emerald-400">Uber Eats</h3>
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Uber Eats</h3>
             </div>
-            <span className="text-xs font-black bg-emerald-900 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-600">{orderTypeStats.uberCount}</span>
+            <span className="text-[10px] font-black bg-emerald-900 text-emerald-200 px-1.5 py-0.5 rounded-full border border-emerald-600">{orderTypeStats.uberCount}</span>
           </div>
-          <p className="text-2xl font-black text-emerald-400">{formatPrice(orderTypeStats.uberTotal)}</p>
+          <p className="text-xl lg:text-2xl font-black text-emerald-400">{formatPrice(orderTypeStats.uberTotal)}</p>
         </div>
       </div>
 
@@ -693,6 +762,12 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                         })()}
                       </div>
                     )}
+                    <div className="flex flex-col">
+                      <span className="opacity-60 uppercase text-[9px] tracking-widest">Sucursal</span>
+                      <span className="bg-slate-900 text-[#FFD700] rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max">
+                        📍 {order.branchName || 'Matriz'}
+                      </span>
+                    </div>
                     {order.customerName && (
                       <div className="flex flex-col col-span-2">
                         <span className="opacity-60 uppercase text-[9px] tracking-widest">Cliente</span>

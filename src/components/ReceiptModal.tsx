@@ -241,6 +241,9 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 {/* Store Header */}
                 <div className="text-center mb-6">
                   <h1 className="text-2xl font-black mb-1 text-center w-full">CHIFA MEI HUA ARMENIA</h1>
+                  {order.branchName && (
+                    <p className="text-xs font-black uppercase text-[#B91C1C] mb-1">📍 {order.branchName.toUpperCase()}</p>
+                  )}
                   <p className="text-xs font-bold uppercase mb-1">ALVAREZ ZAMORA RUTH GARDENIA</p>
                   <p className="text-xs font-bold uppercase mb-2">RUC: 0923809529001</p>
                     {order.id.startsWith('preview-') ? (
@@ -361,6 +364,9 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 {/* Kitchen Ticket */}
                 <div className="text-center mb-4">
                   <h1 className="text-xl font-black mb-1 uppercase">COMANDA</h1>
+                  {order.branchName && (
+                    <p className="text-xs font-black uppercase text-[#B91C1C]">📍 {order.branchName.toUpperCase()}</p>
+                  )}
                   <div className="border-t-2 border-black border-dashed w-full mt-2 pt-2">
                     {order.tableNumber && (
                       <h2 className="text-lg font-black uppercase">

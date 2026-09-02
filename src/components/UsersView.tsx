@@ -5,11 +5,12 @@ import Swal from 'sweetalert2';
 
 interface UsersViewProps {
   users: UserAccount[];
+  currentUser?: UserAccount | null;
   onAddUser: (user: UserAccount) => void;
   onDeleteUser: (id: string) => void;
 }
 
-export function UsersView({ users, onAddUser, onDeleteUser }: UsersViewProps) {
+export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: UsersViewProps) {
   const [cedula, setCedula] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -31,12 +32,17 @@ export function UsersView({ users, onAddUser, onDeleteUser }: UsersViewProps) {
       return;
     }
 
+    const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
     onAddUser({
       id: editingId || Date.now().toString(),
       cedula,
       name,
       password,
-      role
+      role,
+      branchId: currentBranchId,
+      branchName: currentBranchName
     });
 
     if (editingId) {
@@ -164,13 +170,17 @@ export function UsersView({ users, onAddUser, onDeleteUser }: UsersViewProps) {
                    <p className="text-xs font-bold opacity-60 uppercase">C.C: {user.cedula}</p>
                  </div>
                  
-                 <div className="flex justify-between items-center mt-2">
-                   <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border-2 border-black ${
-                      user.role === 'Administrador' ? 'bg-[#FFD700]' : 
-                      user.role === 'Cajero' ? 'bg-blue-200' : 'bg-green-200'
-                   }`}>
-                     {user.role}
-                   </span>
+                 <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border border-black ${
+                        user.role === 'Administrador' ? 'bg-[#FFD700] text-black' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {user.role}
+                      </span>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded border border-black bg-slate-900 text-white">
+                        📍 {user.branchName || 'Matriz'}
+                      </span>
+                    </div>
                    
                    <div className="flex gap-2">
                      {user.id !== '1' && (

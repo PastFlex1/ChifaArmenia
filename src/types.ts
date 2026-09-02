@@ -8,6 +8,8 @@ export interface UserAccount {
   name: string;
   role: Role;
   password: string;
+  branchId?: string;
+  branchName?: string;
 }
 
 export interface MenuItem {
@@ -43,6 +45,8 @@ export interface Order {
   sellerName?: string;
   status?: 'active' | 'voided';
   notes?: string;
+  branchId?: string;
+  branchName?: string;
 }
 
 export interface TableOrder {
@@ -54,6 +58,8 @@ export interface TableOrder {
   updatedAtTimestamp?: number;
   sellerId?: string;
   sellerName?: string;
+  branchId?: string;
+  branchName?: string;
 }
 
 export interface RawMaterial {

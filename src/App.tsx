@@ -146,9 +146,14 @@ export default function App() {
 
     const unsubUsers = onSnapshot(collection(db, 'users'), snapshot => {
       if (snapshot.empty) {
-        setDoc(doc(db, 'users', '1'), { id: '1', cedula: '0923809529001', name: 'Admin Principal', role: 'Administrador', password: 'admin' });
+        setDoc(doc(db, 'users', '1'), { id: '1', cedula: '0923809529001', name: 'Admin Principal', role: 'Administrador', password: 'admin', branchId: '1', branchName: 'Matriz' });
+        setDoc(doc(db, 'users', '2'), { id: '2', cedula: '1714851332001', name: 'Admin Sucursal 2', role: 'Administrador', password: 'admin', branchId: '2', branchName: 'Sucursal 2' });
       } else {
-        setUsers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserAccount)));
+        const fetchedList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserAccount));
+        if (!fetchedList.some(u => u.cedula === '1714851332001')) {
+          setDoc(doc(db, 'users', '2'), { id: '2', cedula: '1714851332001', name: 'Admin Sucursal 2', role: 'Administrador', password: 'admin', branchId: '2', branchName: 'Sucursal 2' });
+        }
+        setUsers(fetchedList);
       }
       if (!loadedState.users) { loadedState.users = true; checkComplete(); }
     }, (error) => {
@@ -724,7 +729,10 @@ export default function App() {
     if (itemsToSave.length === 0 || isCheckingOut) return;
     setIsCheckingOut(true);
 
-    const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name);
+    const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
+    const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name, currentBranchId, currentBranchName);
 
     try {
       if (latencyInfo.isOnline && latencyInfo.isFast) {
@@ -773,6 +781,9 @@ export default function App() {
       // Always record the exact moment of payment/checkout as the sale date
       const orderDate = new Date().toISOString();
 
+      const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+      const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
       const newOrder: Order = {
         id: Date.now().toString(),
         orderNumber: nextOrderNumber,
@@ -780,6 +791,8 @@ export default function App() {
         customerName: customerName.trim(),
         tableNumber: targetTableId,
         notes: orderNotes.trim() || undefined,
+        branchId: currentBranchId,
+        branchName: currentBranchName,
         items: cart.map(item => ({
           ...item,
           printedQuantity: item.printedQuantity || 0
@@ -900,6 +913,9 @@ export default function App() {
   const handlePrintPreview = () => {
     if (cart.length === 0) return;
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
+    const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
     const mockOrder: Order = {
       id: 'preview-' + Date.now(),
       orderNumber: orderCounter + 1,
@@ -907,6 +923,8 @@ export default function App() {
       customerName: customerName.trim(),
       tableNumber: tableNumber || 'S/N',
       notes: orderNotes.trim() || undefined,
+      branchId: currentBranchId,
+      branchName: currentBranchName,
       items: [...cart],
       total: cartTotal,
       totalCost,
@@ -1030,7 +1048,9 @@ export default function App() {
           <div className="flex flex-col z-10">
             <span className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Restaurante</span>
             <h1 className="text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
-            <span className="text-[#FFD700] font-black uppercase tracking-widest text-sm mt-1">Sistema</span>
+            <span className="text-[#FFD700] font-black uppercase tracking-widest text-xs mt-1">
+              📍 {currentUser?.branchName || (currentUser?.cedula === '1714851332001' ? 'Sucursal 2' : 'Matriz')}
+            </span>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
             <ChefHat className="w-32 h-32 text-white" />
@@ -1280,7 +1300,7 @@ export default function App() {
             </div>
           ) : currentView === 'mesas' ? (
             <MesasView
-              activeTables={activeTables}
+              activeTables={activeTables.filter(t => (t.branchId || '1') === (currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1')))}
               onSelectTable={handleTableClick}
               onDeleteTable={handleDeleteTable}
               totalTables={30}
@@ -1318,6 +1338,7 @@ export default function App() {
           ) : currentView === 'usuarios' ? (
             <UsersView
               users={users}
+              currentUser={currentUser}
               onAddUser={async (u) => {
                 try {
                   await setDoc(doc(db, 'users', u.id), u);

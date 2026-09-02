@@ -32,7 +32,7 @@ export function isTableFreed(tableNumber: string, orderTimestamp?: number): bool
 }
 
 // Persistencia Local Instantánea (0ms)
-export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string): TableOrder | null {
+export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string, branchId?: string, branchName?: string): TableOrder | null {
   const normalized = tableNumber.trim();
   if (!normalized) return null;
 
@@ -54,7 +54,9 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
     updatedAt: new Date(nowMs).toISOString(),
     updatedAtTimestamp: nowMs,
     sellerId,
-    sellerName
+    sellerName,
+    branchId,
+    branchName
   };
   // Si la mesa se está modificando, remover cualquier marca de tiempo de liberación previa si es anterior
   const normLower = normalized.toLowerCase();
