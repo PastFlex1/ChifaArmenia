@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff, Bike } from 'lucide-react';
 import { CATEGORIES } from './data';
 import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
@@ -35,6 +35,8 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [activeTables, setActiveTables] = useState<TableOrder[]>([]);
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
+  // Rastreo de mesas liberadas/cobradas localmente para evitar alertarse a uno mismo
+  const locallyProcessedTablesRef = useRef<Map<string, number>>(new Map());
 
   // Sync State & Latency Monitor
   const [syncState, setSyncState] = useState<SyncState>('synced');
@@ -131,7 +133,15 @@ export default function App() {
 
       if (freedBranch && freedBranch !== currentBranchId) return;
 
-      if (activeTableId && activeTableId.trim().toLowerCase() === (freedTable || '').trim().toLowerCase()) {
+      const normFreed = (freedTable || '').trim().toLowerCase();
+      const localKey = `${freedBranch || currentBranchId}_${normFreed}`;
+      const localTime = locallyProcessedTablesRef.current.get(localKey);
+      if (localTime && Date.now() - localTime < 15000) {
+        // Esta acción fue realizada por esta misma computadora, no mostrar alerta ni reiniciar
+        return;
+      }
+
+      if (activeTableId && activeTableId.trim().toLowerCase() === normFreed) {
         Swal.fire({
           title: 'Mesa Liberada',
           text: `La mesa ${freedTable} fue cobrada o liberada desde otra computadora.`,
@@ -218,7 +228,11 @@ export default function App() {
           const tNum = removedData?.tableNumber || (docId.includes('_') ? docId.substring(docId.indexOf('_') + 1) : docId);
           if (tNum) {
             markTableAsFreed(tNum, undefined, tBranch);
-            window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch } }));
+            const localKey = `${tBranch}_${tNum.trim().toLowerCase()}`;
+            const localTime = locallyProcessedTablesRef.current.get(localKey);
+            if (!localTime || Date.now() - localTime > 15000) {
+              window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch } }));
+            }
           }
         }
       });
@@ -245,7 +259,11 @@ export default function App() {
           if (data && data.tableNumber) {
             const freedAtMs = data.freedAtTimestamp || (data.freedAt ? new Date(data.freedAt).getTime() : Date.now());
             markTableAsFreed(data.tableNumber, freedAtMs, freedBranch);
-            window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: data.tableNumber, branchId: freedBranch } }));
+            const localKey = `${freedBranch}_${data.tableNumber.trim().toLowerCase()}`;
+            const localTime = locallyProcessedTablesRef.current.get(localKey);
+            if (!localTime || Date.now() - localTime > 15000) {
+              window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: data.tableNumber, branchId: freedBranch } }));
+            }
           }
         }
       });
@@ -325,7 +343,10 @@ export default function App() {
           if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
             const orderTime = new Date(order.date).getTime();
             markTableAsFreed(order.tableNumber, orderTime, orderBranch);
-            if (orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
+            const localKey = `${orderBranch}_${normT}`;
+            const localTime = locallyProcessedTablesRef.current.get(localKey);
+            const isLocal = localTime && Date.now() - localTime < 15000;
+            if (!isLocal && orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
               setCart([]);
               setActiveTableId(null);
               setTableNumber('');
@@ -649,6 +670,9 @@ export default function App() {
     });
 
     if (result.isConfirmed) {
+      if (tableNum) {
+        locallyProcessedTablesRef.current.set(`${currentBranchId}_${tableNum.trim().toLowerCase()}`, Date.now());
+      }
       try {
         const batch = writeBatch(db);
         const docId = `${currentBranchId}_${tableNum}`;
@@ -803,9 +827,19 @@ export default function App() {
 
     try {
       const targetTableId = (activeTableId || tableNumber).trim();
+      if (targetTableId) {
+        locallyProcessedTablesRef.current.set(`${currentBranchId}_${targetTableId.toLowerCase()}`, Date.now());
+      }
 
       // 1. Protección contra duplicados en mesas cobradas remotamente
-      if (targetTableId && !isNonTableType(targetTableId) && isTableFreed(targetTableId)) {
+      const localDraft = getLocalDraft(targetTableId, currentBranchId);
+      const activeTableDoc = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber.trim().toLowerCase() === targetTableId.toLowerCase());
+      const currentOrderTime = localDraft?.updatedAtTimestamp || 
+        activeTableDoc?.updatedAtTimestamp ||
+        (activeTableDoc?.updatedAt ? new Date(activeTableDoc.updatedAt).getTime() : undefined) ||
+        (activeTableDoc?.createdAt ? new Date(activeTableDoc.createdAt).getTime() : undefined);
+
+      if (targetTableId && !isNonTableType(targetTableId) && currentOrderTime && isTableFreed(targetTableId, currentOrderTime, currentBranchId)) {
         Swal.fire({
           title: 'Mesa Ya Cobrada',
           text: `La mesa ${targetTableId} ya fue cobrada desde otro dispositivo.`,
@@ -818,11 +852,13 @@ export default function App() {
         return;
       }
 
-      // 2. Protección contra cobros duplicados en menos de 10 segundos (misma mesa/canal y mismo total)
+      // 2. Protección contra cobros duplicados en menos de 10 segundos (misma mesa/canal y mismo total en la misma sucursal)
       const tenSecAgo = Date.now() - 10000;
       const recentDuplicate = orders.find(o => {
         const oTime = new Date(o.date).getTime();
-        return oTime >= tenSecAgo &&
+        const oBranch = o.branchId || '1';
+        return oBranch === currentBranchId &&
+               oTime >= tenSecAgo &&
                o.total === cartTotal &&
                (o.tableNumber || '').trim().toLowerCase() === targetTableId.toLowerCase();
       });
@@ -945,6 +981,9 @@ export default function App() {
     if (!result.isConfirmed) return;
 
     setIsCheckingOut(true);
+    if (targetTableId) {
+      locallyProcessedTablesRef.current.set(`${currentBranchId}_${targetTableId.toLowerCase()}`, Date.now());
+    }
 
     try {
       const previousTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId);

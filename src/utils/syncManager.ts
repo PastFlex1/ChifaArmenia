@@ -31,7 +31,7 @@ export function isTableFreed(tableNumber: string, orderTimestamp?: number, branc
   const key = getFreedKey(normalized, branchId);
   const freedAt = freedTablesTimestamps[key];
   if (!freedAt) return false;
-  if (!orderTimestamp) return true;
+  if (!orderTimestamp) return false;
   return orderTimestamp <= freedAt;
 }
 
@@ -202,8 +202,10 @@ export function getAllLocalDrafts(): Record<string, TableOrder> {
     let changed = false;
     Object.keys(drafts).forEach(key => {
       const draft = drafts[key];
-      const normKey = key.trim().toLowerCase();
-      if (isTableFreed(normKey, draft?.updatedAtTimestamp)) {
+      const normKey = (draft.tableNumber || key).trim().toLowerCase();
+      const dBranch = draft.branchId || '1';
+      const draftTs = draft?.updatedAtTimestamp || (draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
+      if (draftTs && isTableFreed(normKey, draftTs, dBranch)) {
         delete drafts[key];
         changed = true;
       }
