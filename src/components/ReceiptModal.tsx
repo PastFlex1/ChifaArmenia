@@ -241,7 +241,9 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
               <>
                 {/* Store Header */}
                 <div className="text-center mb-6">
-                  <h1 className="text-2xl font-black mb-1 text-center w-full">CHIFA MEI HUA ARMENIA</h1>
+                  <h1 className="text-2xl font-black mb-1 text-center w-full">
+                    {(order.branchId === '2' || order.branchName === 'Sucursal 2') ? 'CHIFA MEI HUA SAN RAFAEL' : 'CHIFA MEI HUA ARMENIA'}
+                  </h1>
                   {order.branchName && (
                     <p className="text-xs font-black uppercase text-[#B91C1C] mb-1">📍 {order.branchName.toUpperCase()}</p>
                   )}

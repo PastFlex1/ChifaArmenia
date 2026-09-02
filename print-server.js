@@ -109,10 +109,19 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('--------------------------------'));
           
           order.items.forEach(item => {
-            let name = item.menuItem.name.substring(0, 16).padEnd(16);
-            let qty = item.quantity.toString().padEnd(4);
-            let price = formatPrice(item.quantity * item.menuItem.price).padStart(10);
-            writeData(textToBuffer(`${qty} ${name} ${price}`));
+            const fullName = item.menuItem.name.toUpperCase();
+            const qty = String(item.quantity).padEnd(4, ' ');
+            const price = formatPrice(item.quantity * item.menuItem.price).padStart(10, ' ');
+            
+            if (fullName.length > 16) {
+              const part1 = fullName.substring(0, 16);
+              const part2 = fullName.substring(16);
+              writeData(textToBuffer(`${qty}${part1.padEnd(16, ' ')} ${price}`));
+              writeData(textToBuffer(`     ${part2}`));
+            } else {
+              const line = `${qty}${fullName.padEnd(16, ' ')} ${price}`;
+              writeData(textToBuffer(line));
+            }
           });
           
           writeData(textToBuffer('--------------------------------'));

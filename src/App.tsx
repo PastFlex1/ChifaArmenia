@@ -776,6 +776,43 @@ export default function App() {
 
     try {
       const targetTableId = (activeTableId || tableNumber).trim();
+
+      // 1. Protección contra duplicados en mesas cobradas remotamente
+      if (targetTableId && !isNonTableType(targetTableId) && isTableFreed(targetTableId)) {
+        Swal.fire({
+          title: 'Mesa Ya Cobrada',
+          text: `La mesa ${targetTableId} ya fue cobrada desde otro dispositivo.`,
+          icon: 'info',
+          confirmButtonColor: '#000'
+        });
+        clearCart();
+        setActiveTableId(null);
+        setIsCheckingOut(false);
+        return;
+      }
+
+      // 2. Protección contra cobros duplicados en menos de 10 segundos (misma mesa/canal y mismo total)
+      const tenSecAgo = Date.now() - 10000;
+      const recentDuplicate = orders.find(o => {
+        const oTime = new Date(o.date).getTime();
+        return oTime >= tenSecAgo &&
+               o.total === cartTotal &&
+               (o.tableNumber || '').trim().toLowerCase() === targetTableId.toLowerCase();
+      });
+
+      if (recentDuplicate) {
+        Swal.fire({
+          title: 'Venta Ya Registrada',
+          text: `Este pedido ya fue registrado hace un momento (Pedido #${String(recentDuplicate.orderNumber).padStart(5, '0')}).`,
+          icon: 'info',
+          confirmButtonColor: '#000'
+        });
+        clearCart();
+        setActiveTableId(null);
+        setIsCheckingOut(false);
+        return;
+      }
+
       const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
 

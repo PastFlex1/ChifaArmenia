@@ -66,8 +66,7 @@ function printTicket(jobId, order, ticketType) {
         if (ticketType === 'customer') {
           writeData(ALIGN_CENTER);
           writeData(BOLD_ON);
-          writeData(textToBuffer('CHIFA MEI HUA ARMENIA'));
-          writeData(textToBuffer('SUCURSAL 2'));
+          writeData(textToBuffer('CHIFA MEI HUA SAN RAFAEL'));
           writeData(NORMAL_SIZE);
           writeData(textToBuffer('ALVAREZ ZAMORA RUTH GARDENIA'));
           writeData(textToBuffer('RUC: 0923809529001'));
@@ -105,15 +104,17 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('--------------------------------'));
           
           order.items.forEach(item => {
-            const name = item.menuItem.name.toUpperCase();
-            const qty = String(item.quantity).padStart(2, ' ');
-            const price = formatPrice(item.menuItem.price * item.quantity).padStart(10, ' ');
+            const fullName = item.menuItem.name.toUpperCase();
+            const qty = String(item.quantity).padEnd(4, ' ');
+            const price = formatPrice(item.quantity * item.menuItem.price).padStart(10, ' ');
             
-            if (name.length > 18) {
-              writeData(textToBuffer(`${qty} ${name.substring(0, 18)}`));
-              writeData(textToBuffer(`${' '.repeat(21)}${price}`));
+            if (fullName.length > 16) {
+              const part1 = fullName.substring(0, 16);
+              const part2 = fullName.substring(16);
+              writeData(textToBuffer(`${qty}${part1.padEnd(16, ' ')} ${price}`));
+              writeData(textToBuffer(`     ${part2}`));
             } else {
-              const line = `${qty} ${name.padEnd(18, ' ')}${price}`;
+              const line = `${qty}${fullName.padEnd(16, ' ')} ${price}`;
               writeData(textToBuffer(line));
             }
           });
