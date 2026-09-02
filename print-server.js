@@ -80,7 +80,7 @@ function printTicket(jobId, order, ticketType) {
           }
           
           writeData(textToBuffer('--------------------------------'));
-          writeData(textToBuffer('Cliente: .......................'));
+          writeData(textToBuffer(`Cliente: ${order.customerName ? order.customerName : '.......................'}`));
           writeData(textToBuffer('C.I: ...........................'));
           writeData(textToBuffer('Correo: ........................'));
           writeData(textToBuffer('Telf: ..........................'));
@@ -128,7 +128,15 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('COMANDA'));
           
           if (order.tableNumber) {
-            writeData(textToBuffer(`MESA: ${order.tableNumber}`));
+            const norm = order.tableNumber.trim().toLowerCase();
+            if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) writeData(textToBuffer('PEDIDOS YA'));
+            else if (norm === 'rappi') writeData(textToBuffer('RAPPI'));
+            else if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) writeData(textToBuffer('UBER EATS'));
+            else if (norm === 'domicilio' || norm === 'para llevar') writeData(textToBuffer('DOMICILIO'));
+            else writeData(textToBuffer(`MESA: ${order.tableNumber}`));
+          }
+          if (order.customerName) {
+            writeData(textToBuffer(`CLIENTE/DIR: ${order.customerName}`));
           }
           writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
           
