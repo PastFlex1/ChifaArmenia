@@ -396,8 +396,8 @@ export default function App() {
     });
 
     const deliveryFees: MenuItem[] = [
+      { id: '__delivery_2__', name: 'DOMICILIO $2', category: 'Bebidas', price: 2, cost: 0, isDrink: false },
       { id: '__delivery_3__', name: 'DOMICILIO $3', category: 'Bebidas', price: 3, cost: 0, isDrink: false },
-      { id: '__delivery_4__', name: 'DOMICILIO $2', category: 'Bebidas', price: 2, cost: 0, isDrink: false },
     ];
 
     return [...d, ...bev, ...c, ...deliveryFees];
@@ -424,7 +424,7 @@ export default function App() {
   }, [posItems, activeCategory, searchQuery]);
 
   const getMaxAvailable = (menuItem: MenuItem): number => {
-    if (menuItem.id === '__delivery_3__' || menuItem.id === '__delivery_4__') return Infinity;
+    if (menuItem.id === '__delivery_2__' || menuItem.id === '__delivery_3__' || menuItem.id === '__delivery_4__') return Infinity;
     if (menuItem.isCombo) {
       const combo = combos.find(c => c.id === menuItem.id);
       if (!combo || !combo.items || combo.items.length === 0) return Infinity;
@@ -1555,52 +1555,17 @@ export default function App() {
 
             {/* Campo de Nombre del Cliente / Dirección (SOLO PARA DOMICILIO) */}
             {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') && (
-              <div className="flex flex-col gap-2">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-4 w-4 text-emerald-700" />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Cliente / Dirección (Ej: Juan Pérez - Av 9 Oct)"
-                    className="w-full pl-9 pr-3 py-2 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ring-2 ring-emerald-300"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                  />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-4 w-4 text-emerald-700" />
                 </div>
-                {/* Botones rápidos de tarifa de domicilio */}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const feeId = 'delivery-fee';
-                      const feeItem: MenuItem = { id: feeId, name: 'DOMICILIO', category: 'Bebidas', price: 3, cost: 0 };
-                      setCart(prev => {
-                        const existing = prev.find(i => i.menuItem.id === feeId);
-                        if (existing) return prev.map(i => i.menuItem.id === feeId ? { ...i, menuItem: feeItem, quantity: 1 } : i);
-                        return [...prev, { id: feeId, menuItem: feeItem, quantity: 1 }];
-                      });
-                    }}
-                    className="flex-1 py-2 rounded-xl border-2 border-emerald-700 bg-emerald-100 text-emerald-900 font-black text-sm uppercase hover:bg-emerald-200 transition-colors"
-                  >
-                    🛵 Domicilio $3
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const feeId = 'delivery-fee';
-                      const feeItem: MenuItem = { id: feeId, name: 'DOMICILIO', category: 'Bebidas', price: 4, cost: 0 };
-                      setCart(prev => {
-                        const existing = prev.find(i => i.menuItem.id === feeId);
-                        if (existing) return prev.map(i => i.menuItem.id === feeId ? { ...i, menuItem: feeItem, quantity: 1 } : i);
-                        return [...prev, { id: feeId, menuItem: feeItem, quantity: 1 }];
-                      });
-                    }}
-                    className="flex-1 py-2 rounded-xl border-2 border-emerald-700 bg-emerald-100 text-emerald-900 font-black text-sm uppercase hover:bg-emerald-200 transition-colors"
-                  >
-                    🛵 Domicilio $4
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  placeholder="Cliente / Dirección (Ej: Juan Pérez - Av 9 Oct)"
+                  className="w-full pl-9 pr-3 py-2 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ring-2 ring-emerald-300"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                />
               </div>
             )}
 

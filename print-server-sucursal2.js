@@ -92,7 +92,6 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('Correo: ........................'));
           writeData(textToBuffer('Telf: ..........................'));
           writeData(textToBuffer('Dir: ...........................'));
-          writeData(textToBuffer('F.Nacimiento: ..................'));
           writeData(textToBuffer('--------------------------------'));
           
           writeData(textToBuffer('\n'));
