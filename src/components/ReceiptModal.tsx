@@ -263,7 +263,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                           if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 TIPO: PEDIDOS YA';
                           if (norm === 'rappi') return '🧡 TIPO: RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 TIPO: UBER EATS';
-                          if (norm === 'domicilio' || norm === 'para llevar') return '🏠 TIPO: DOMICILIO';
+                          if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 TIPO: LLEVAR';
                           return `MESA: ${order.tableNumber}`;
                         })()}
                       </p>
@@ -374,7 +374,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                           if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 PEDIDOS YA';
                           if (norm === 'rappi') return '🧡 RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 UBER EATS';
-                          if (norm === 'domicilio' || norm === 'para llevar') return '🏠 DOMICILIO';
+                          if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 LLEVAR';
                           return `MESA: ${order.tableNumber}`;
                         })()}
                       </h2>

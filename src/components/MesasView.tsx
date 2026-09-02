@@ -95,11 +95,11 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
           </button>
 
           <button
-            onClick={() => onSelectTable('Domicilio')}
+            onClick={() => onSelectTable('Llevar')}
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
-            title="Crear pedido directo Domicilio"
+            title="Crear pedido directo Llevar"
           >
-            <ShoppingBag className="w-4 h-4" /> Domicilio
+            <ShoppingBag className="w-4 h-4" /> Llevar
           </button>
         </div>
 

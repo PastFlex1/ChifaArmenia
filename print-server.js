@@ -84,7 +84,7 @@ function printTicket(jobId, order, ticketType) {
             if (normT === 'pedidosya' || normT === 'pedidos ya' || normT.startsWith('pedidos')) writeData(textToBuffer('TIPO: PEDIDOS YA'));
             else if (normT === 'rappi') writeData(textToBuffer('TIPO: RAPPI'));
             else if (normT === 'uber' || normT === 'uber eats' || normT.startsWith('uber')) writeData(textToBuffer('TIPO: UBER EATS'));
-            else if (normT === 'domicilio' || normT === 'para llevar') writeData(textToBuffer('TIPO: DOMICILIO'));
+            else if (normT === 'domicilio' || normT === 'para llevar' || normT === 'llevar') writeData(textToBuffer('TIPO: LLEVAR'));
             else writeData(textToBuffer(`MESA: ${order.tableNumber}`));
           }
           
@@ -152,7 +152,7 @@ function printTicket(jobId, order, ticketType) {
             if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) writeData(textToBuffer('PEDIDOS YA'));
             else if (norm === 'rappi') writeData(textToBuffer('RAPPI'));
             else if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) writeData(textToBuffer('UBER EATS'));
-            else if (norm === 'domicilio' || norm === 'para llevar') writeData(textToBuffer('DOMICILIO'));
+            else if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') writeData(textToBuffer('LLEVAR'));
             else writeData(textToBuffer(`MESA: ${order.tableNumber}`));
           }
           if (order.customerName) {

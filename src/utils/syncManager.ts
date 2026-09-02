@@ -125,11 +125,13 @@ export function purgeDraftsForCompletedOrders(orders: Order[]): void {
 
   const latestOrderByTable: Record<string, number> = {};
   orders.forEach(order => {
-    if (order.tableNumber && order.tableNumber.trim().toLowerCase() !== 'para llevar') {
+    if (order.tableNumber) {
       const normTable = order.tableNumber.trim().toLowerCase();
-      const orderMs = new Date(order.date).getTime();
-      if (!latestOrderByTable[normTable] || orderMs > latestOrderByTable[normTable]) {
-        latestOrderByTable[normTable] = orderMs;
+      if (normTable !== 'para llevar' && normTable !== 'llevar' && normTable !== 'domicilio') {
+        const orderMs = new Date(order.date).getTime();
+        if (!latestOrderByTable[normTable] || orderMs > latestOrderByTable[normTable]) {
+          latestOrderByTable[normTable] = orderMs;
+        }
       }
     }
   });

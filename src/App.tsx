@@ -53,7 +53,7 @@ export default function App() {
   useEffect(() => {
     localStorage.removeItem('chifa_ui_zoom');
     const root = document.getElementById('root');
-    if (root) root.style.zoom = '';
+    if (root) root.style.zoom = '1';
   }, []);
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
@@ -300,7 +300,8 @@ export default function App() {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
           const order = change.doc.data() as Order;
-          if (order.tableNumber && order.tableNumber.trim().toLowerCase() !== 'para llevar') {
+          const normT = (order.tableNumber || '').trim().toLowerCase();
+          if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
             const orderTime = new Date(order.date).getTime();
             markTableAsFreed(order.tableNumber, orderTime);
             if (activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
@@ -591,7 +592,7 @@ export default function App() {
 
   const isNonTableType = (tbl: string) => {
     const norm = (tbl || '').trim().toLowerCase();
-    return isDeliveryApp(norm) || norm === 'domicilio' || norm === 'para llevar';
+    return isDeliveryApp(norm) || norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar';
   };
 
   const handleTableClick = (tNumber: string) => {
@@ -1087,17 +1088,17 @@ export default function App() {
         <WelcomeModal user={currentUser} onClose={() => setShowWelcome(false)} />
       )}
 
-      <div className="hidden lg:flex lg:w-[220px] xl:w-[260px] flex-col shrink-0 gap-2 h-full z-10">
-        <div className="bg-[#B91C1C] text-white p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-[210px] 2xl:w-[250px] flex-col shrink-0 gap-2 h-full z-10">
+        <div className="bg-[#B91C1C] text-white p-3 2xl:p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden shrink-0">
           <div className="flex flex-col z-10">
-            <span className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Restaurante</span>
-            <h1 className="text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
-            <span className="text-[#FFD700] font-black uppercase tracking-widest text-xs mt-1">
+            <span className="text-[10px] 2xl:text-xs font-bold uppercase tracking-widest opacity-80 mb-0.5">Restaurante</span>
+            <h1 className="text-2xl 2xl:text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
+            <span className="text-[#FFD700] font-black uppercase tracking-widest text-[11px] 2xl:text-xs mt-1">
               📍 {currentUser?.branchName || (currentUser?.cedula === '1714851332001' ? 'Sucursal 2' : 'Matriz')}
             </span>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
-            <ChefHat className="w-32 h-32 text-white" />
+            <ChefHat className="w-28 h-28 2xl:w-32 2xl:h-32 text-white" />
           </div>
         </div>
 
@@ -1105,7 +1106,7 @@ export default function App() {
           {canView('mesas') && (
             <button
               onClick={() => setCurrentView('mesas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <LayoutGrid className="w-5 h-5" /> Mesas
@@ -1119,7 +1120,7 @@ export default function App() {
                 setCart([]);
                 setCurrentView('pos');
               }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Store className="w-5 h-5" /> Punto de Venta
@@ -1128,7 +1129,7 @@ export default function App() {
           {canView('materia_prima') && (
             <button
               onClick={() => setCurrentView('materia_prima')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Package className="w-5 h-5" /> Materia Prima
@@ -1137,7 +1138,7 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('inv_comida')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <ChefHat className="w-5 h-5" /> Inv. Comidas
@@ -1146,7 +1147,7 @@ export default function App() {
           {canView('inv_bebidas') && (
             <button
               onClick={() => setCurrentView('inv_bebidas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Wine className="w-5 h-5" /> Inv. Bebidas
@@ -1155,7 +1156,7 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('combos')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Layers className="w-5 h-5" /> Combos
@@ -1167,7 +1168,7 @@ export default function App() {
           {canView('ventas') && (
             <button
               onClick={() => setCurrentView('ventas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <LineChart className="w-5 h-5" /> Ventas
@@ -1176,7 +1177,7 @@ export default function App() {
           {canView('usuarios') && (
             <button
               onClick={() => setCurrentView('usuarios')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Users className="w-5 h-5" /> Personal
@@ -1246,7 +1247,7 @@ export default function App() {
 
         {/* POS Header Actions (Search) */}
         {currentView === 'pos' && (
-          <div className="shrink-0 mb-4 flex flex-col sm:flex-row gap-3">
+          <div className="shrink-0 mb-3 2xl:mb-4 flex flex-col sm:flex-row gap-3">
             <div className="relative w-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 opacity-40 text-black" />
@@ -1254,7 +1255,7 @@ export default function App() {
               <input
                 type="text"
                 placeholder="Buscar platillo..."
-                className="block w-full pl-11 pr-4 py-3 border-2 border-black rounded-xl font-bold bg-white placeholder-[#1A1A1A] placeholder-opacity-40 focus:outline-none focus:bg-[#FFD700]/10 transition-colors uppercase text-sm"
+                className="block w-full pl-11 pr-4 py-2.5 2xl:py-3 border-2 border-black rounded-xl font-bold bg-white placeholder-[#1A1A1A] placeholder-opacity-40 focus:outline-none focus:bg-[#FFD700]/10 transition-colors uppercase text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -1268,7 +1269,7 @@ export default function App() {
             <div className="flex flex-col h-full bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
 
               {/* Horizontal Categories */}
-              <div className="shrink-0 px-4 pt-4 pb-2 border-b-2 border-black/10 bg-slate-50 flex gap-2 overflow-x-auto scrollbar-hide">
+              <div className="shrink-0 px-3 2xl:px-4 pt-3 pb-2 border-b-2 border-black/10 bg-slate-50 flex gap-2 overflow-x-auto scrollbar-hide">
                 {['Todos', ...CATEGORIES].map((category) => (
                   <button
                     key={category}
@@ -1276,7 +1277,7 @@ export default function App() {
                       setActiveCategory(category as Category | 'Todos');
                       setSearchQuery('');
                     }}
-                    className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${activeCategory === category && !searchQuery
+                    className={`px-3.5 2xl:px-5 py-2 2xl:py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${activeCategory === category && !searchQuery
                       ? 'bg-[#B91C1C] text-white'
                       : 'bg-white hover:bg-slate-100 text-slate-800'
                       }`}
@@ -1287,8 +1288,8 @@ export default function App() {
               </div>
 
               {/* Menu Items Grid */}
-              <div className="flex-1 overflow-y-auto p-4 content-start">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+              <div className="flex-1 overflow-y-auto p-3 2xl:p-4 content-start">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 2xl:gap-4">
                   {filteredItems.map((item) => {
                     const maxStock = getMaxAvailable(item);
                     const isOutOfStock = maxStock === 0;
@@ -1298,34 +1299,34 @@ export default function App() {
                       <div
                         key={item.id}
                         onClick={() => !isOutOfStock && addToCart(item)}
-                        className={`p-4 rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[140px] relative ${isOutOfStock
+                        className={`p-3 2xl:p-4 rounded-xl border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[120px] 2xl:min-h-[140px] relative ${isOutOfStock
                           ? 'bg-slate-200 opacity-60 cursor-not-allowed'
-                          : 'bg-white hover:bg-[#FFD700] hover:translate-y-[-2px] hover:translate-x-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] cursor-pointer group'
+                          : 'bg-white hover:bg-[#FFD700] hover:translate-y-[-2px] hover:translate-x-[-2px] hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] cursor-pointer group'
                           }`}
                       >
                         {isOutOfStock && (
-                          <div className="absolute top-2 right-2 bg-[#B91C1C] text-white text-[10px] font-black px-2 py-1 rounded border-2 border-black transform rotate-6 z-10 uppercase">
+                          <div className="absolute top-2 right-2 bg-[#B91C1C] text-white text-[10px] font-black px-2 py-0.5 rounded border-2 border-black transform rotate-6 z-10 uppercase">
                             Agotado
                           </div>
                         )}
                         {!isOutOfStock && isLowStock && maxStock !== Infinity && (
-                          <div className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] font-black px-2 py-1 rounded border-2 border-black z-10 uppercase">
+                          <div className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] font-black px-2 py-0.5 rounded border-2 border-black z-10 uppercase">
                             Stock Bajo: {maxStock}
                           </div>
                         )}
                         <div>
-                          <h3 className={`font-black text-sm lg:text-base leading-tight uppercase transition-colors line-clamp-2 ${!isOutOfStock && 'group-hover:text-black'}`}>
+                          <h3 className={`font-black text-xs lg:text-sm leading-tight uppercase transition-colors line-clamp-2 ${!isOutOfStock && 'group-hover:text-black'}`}>
                             {item.name}
                           </h3>
-                          <span className="text-[10px] font-bold uppercase opacity-50 mt-1 block">{item.category === 'Especial' ? 'Platos Especiales' : item.category}</span>
+                          <span className="text-[10px] font-bold uppercase opacity-50 mt-0.5 block">{item.category === 'Especial' ? 'Platos Especiales' : item.category}</span>
                         </div>
-                        <div className="flex justify-between items-end mt-4">
-                          <span className="text-xl font-black">
+                        <div className="flex justify-between items-end mt-2.5 2xl:mt-4">
+                          <span className="text-lg 2xl:text-xl font-black">
                             {formatPrice(item.price)}
                           </span>
                           {!isOutOfStock && (
-                            <button className="w-8 h-8 bg-black text-white rounded-lg border-2 border-black flex items-center justify-center font-bold relative overflow-hidden group-hover:bg-[#B91C1C] transition-colors">
-                              <Plus className="w-5 h-5 absolute" />
+                            <button className="w-7 h-7 2xl:w-8 2xl:h-8 bg-black text-white rounded-lg border-2 border-black flex items-center justify-center font-bold relative overflow-hidden group-hover:bg-[#B91C1C] transition-colors">
+                              <Plus className="w-4 h-4 2xl:w-5 2xl:h-5 absolute" />
                             </button>
                           )}
                         </div>
@@ -1452,16 +1453,16 @@ export default function App() {
 
       {/* RIGHT PANEL - CART */}
       {currentView === 'pos' && (
-        <div className="w-[320px] xl:w-[380px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
+        <div className="w-[310px] 2xl:w-[370px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
 
           {/* Cart Header */}
-          <div className="bg-[#B91C1C] text-white p-4 flex flex-col gap-1.5 z-10 shrink-0 border-b-2 border-black">
+          <div className="bg-[#B91C1C] text-white p-3 2xl:p-4 flex flex-col gap-1 z-10 shrink-0 border-b-2 border-black">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2 text-base">
                 <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
                 Nota de Venta
               </h2>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border border-white/30 shadow-sm bg-black/20 backdrop-blur-sm">
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border border-white/30 shadow-sm bg-black/20 backdrop-blur-sm">
                 {syncState === 'synced' && (
                   <>
                     <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -1493,7 +1494,7 @@ export default function App() {
             </span>
           </div>
 
-          <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
+          <div className="p-3 2xl:p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
             {/* Selector Rápido de Tipo de Comanda */}
             <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
               <button
@@ -1515,14 +1516,14 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId) setTableNumber('Domicilio');
+                  if (!activeTableId) setTableNumber('Llevar');
                 }}
-                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar')
+                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar')
                   ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
               >
-                <ShoppingBag className="w-3 h-3" /> Domicilio
+                <ShoppingBag className="w-3 h-3" /> Llevar
               </button>
               <button
                 type="button"
@@ -1573,7 +1574,7 @@ export default function App() {
                   <span className="text-xs">🧡</span>
                 ) : (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats') ? (
                   <span className="text-xs">🟢</span>
-                ) : (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') ? (
+                ) : (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar') ? (
                   <ShoppingBag className="h-4 w-4 text-emerald-700" />
                 ) : (
                   <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />
@@ -1581,7 +1582,7 @@ export default function App() {
               </div>
               <input
                 type="text"
-                placeholder="Mesa, Domicilio, PedidosYa, Rappi, Uber"
+                placeholder="Mesa, Llevar, PedidosYa, Rappi, Uber"
                 className={`w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ${isDeliveryApp(tableNumber) ? 'bg-red-50 text-red-900 border-red-800' : ''
                   }`}
                 value={tableNumber}
@@ -1590,8 +1591,8 @@ export default function App() {
               />
             </div>
 
-            {/* Campo de Nombre del Cliente / Dirección (SOLO PARA DOMICILIO) */}
-            {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') && (
+            {/* Campo de Nombre del Cliente / Dirección (SOLO PARA LLEVAR / DOMICILIO) */}
+            {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar') && (
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <User className="h-4 w-4 text-emerald-700" />
@@ -1666,24 +1667,24 @@ export default function App() {
           </div>
 
           {/* Checkout Section */}
-          <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
-            <div className="flex justify-between items-center mb-2">
+          <div className="p-3 2xl:p-4 bg-slate-50 border-t-2 border-black shrink-0">
+            <div className="flex justify-between items-center mb-1.5 2xl:mb-2">
               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
                 <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
                 Feriado (IVA 8%)
               </label>
             </div>
-            <div className="flex justify-between mb-1 text-sm">
+            <div className="flex justify-between mb-0.5 2xl:mb-1 text-xs 2xl:text-sm">
               <span className="opacity-60 font-bold uppercase">Subtotal</span>
               <span className="font-bold">{formatPrice(cartTotal / (isHolidayIva ? 1.08 : 1.15))}</span>
             </div>
-            <div className="flex justify-between mb-3 text-sm">
+            <div className="flex justify-between mb-1.5 2xl:mb-3 text-xs 2xl:text-sm">
               <span className="opacity-60 font-bold uppercase">IVA ({isHolidayIva ? '8%' : '15%'})</span>
               <span className="font-bold">{formatPrice(cartTotal - (cartTotal / (isHolidayIva ? 1.08 : 1.15)))}</span>
             </div>
-            <div className="flex justify-between items-end mb-4">
+            <div className="flex justify-between items-end mb-2.5 2xl:mb-4">
               <span className="text-xs font-black uppercase tracking-widest">Total a Pagar</span>
-              <span className="text-3xl font-black">{formatPrice(cartTotal)}</span>
+              <span className="text-2xl 2xl:text-3xl font-black">{formatPrice(cartTotal)}</span>
             </div>
 
             <div className="flex justify-between items-center mb-2 gap-2">
@@ -1698,9 +1699,9 @@ export default function App() {
             </div>
 
             {parseFloat(cashReceived) > 0 && (
-              <div className="flex justify-between items-end mb-6">
+              <div className="flex justify-between items-end mb-3 2xl:mb-6">
                 <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
-                <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
+                <span className="text-lg 2xl:text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
               </div>
             )}
 
@@ -1709,7 +1710,7 @@ export default function App() {
                 <button
                   onClick={clearCart}
                   disabled={cart.length === 0 || isCheckingOut}
-                  className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                  className="py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
                   title="Limpiar Orden"
                 >
                   <Trash2 className="w-5 h-5 text-[#B91C1C]" />
@@ -1718,13 +1719,13 @@ export default function App() {
               <button
                 onClick={handlePrintPreview}
                 disabled={cart.length === 0 || isCheckingOut}
-                className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                className="py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
                 title="Imprimir Pre-cuenta o Comanda"
               >
                 <Printer className="w-5 h-5 text-black" />
               </button>
               {activeTableId ? (
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-1.5 2xl:gap-2 flex-1">
                   <button
                     onClick={handleSaveTable}
                     disabled={isCheckingOut}
@@ -1742,15 +1743,15 @@ export default function App() {
                   <button
                     onClick={handleFreeTableWithoutCheckout}
                     disabled={isCheckingOut}
-                    className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
+                    className="w-full py-1.5 2xl:py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
                   >
                     {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-1.5 2xl:gap-2 flex-1">
                   {isDeliveryApp(tableNumber) && (
-                    <div className="w-full py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
+                    <div className="w-full py-1.5 2xl:py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
                       <Bike className="w-4 h-4 text-[#B91C1C] animate-bounce" />
                       <span>{tableNumber} exige <strong>Cobrar Directo</strong></span>
                     </div>
@@ -1759,7 +1760,7 @@ export default function App() {
                     <button
                       onClick={() => handleSaveTable()}
                       disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
-                      className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                      className="flex-1 py-2.5 2xl:py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
                       title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
                     >
                       Guardar en Mesa
@@ -1767,7 +1768,7 @@ export default function App() {
                     <button
                       onClick={handleCheckout}
                       disabled={cart.length === 0 || isCheckingOut}
-                      className={`flex-1 py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${isDeliveryApp(tableNumber)
+                      className={`flex-1 py-2.5 2xl:py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${isDeliveryApp(tableNumber)
                         ? 'bg-[#B91C1C] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-800'
                         : 'bg-black text-[#FFD700] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]'
                         }`}
@@ -2100,7 +2101,8 @@ export default function App() {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);
             const targetTable = (activeTableId || tableNumber).trim();
-            if (targetTable && targetTable.toLowerCase() !== 'para llevar' && completedOrder.id.startsWith('preview')) {
+            const normTarget = targetTable.toLowerCase();
+            if (normTarget && normTarget !== 'para llevar' && normTarget !== 'llevar' && normTarget !== 'domicilio' && completedOrder.id.startsWith('preview')) {
               const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name);
               if (latencyInfo.isOnline && latencyInfo.isFast) {
                 await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);

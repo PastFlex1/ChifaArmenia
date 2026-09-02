@@ -146,14 +146,14 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     } else if (selectedOrderType === 'domicilio') {
       filtered = filtered.filter(o => {
         const norm = (o.tableNumber || '').trim().toLowerCase();
-        return norm === 'domicilio' || norm === 'para llevar';
+        return norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar';
       });
     } else if (selectedOrderType === 'mesas') {
       filtered = filtered.filter(o => {
         const norm = (o.tableNumber || '').trim().toLowerCase();
         return norm !== 'pedidosya' && norm !== 'pedidos ya' && !norm.startsWith('pedidos') &&
                norm !== 'rappi' && norm !== 'uber' && norm !== 'uber eats' && !norm.startsWith('uber') &&
-               norm !== 'domicilio' && norm !== 'para llevar';
+               norm !== 'domicilio' && norm !== 'para llevar' && norm !== 'llevar';
       });
     }
 
@@ -190,7 +190,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
       } else if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) {
         uberCount++;
         uberTotal += o.total;
-      } else if (norm === 'domicilio' || norm === 'para llevar') {
+      } else if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') {
         domicilioCount++;
         domicilioTotal += o.total;
       } else {
@@ -466,7 +466,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                  selectedOrderType === 'domicilio' ? 'bg-emerald-600 text-white shadow-none translate-y-[1px]' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
               }`}
             >
-              <ShoppingBag className="w-3.5 h-3.5" /> Domicilio ({orderTypeStats.domicilioCount})
+              <ShoppingBag className="w-3.5 h-3.5" /> Llevar ({orderTypeStats.domicilioCount})
             </button>
 
             <button
@@ -751,10 +751,10 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                               </span>
                             );
                           }
-                          if (norm === 'domicilio' || norm === 'para llevar') {
+                          if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') {
                             return (
                               <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
-                                <ShoppingBag className="w-3 h-3" /> Domicilio
+                                <ShoppingBag className="w-3 h-3" /> Llevar
                               </span>
                             );
                           }

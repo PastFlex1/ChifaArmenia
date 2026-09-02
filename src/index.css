@@ -52,10 +52,3 @@
     -moz-appearance: textfield;
   }
 }
-
-/* Escalado responsivo automático EXCLUSIVO para pantallas 1366x768 y laptops compactas */
-@media screen and (min-width: 1024px) and (max-width: 1366px), screen and (min-width: 1024px) and (max-height: 800px) {
-  #root {
-    zoom: 0.84;
-  }
-}
