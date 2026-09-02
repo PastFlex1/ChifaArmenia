@@ -42,6 +42,7 @@ export interface Order {
   sellerId?: string;
   sellerName?: string;
   status?: 'active' | 'voided';
+  notes?: string;
 }
 
 export interface TableOrder {

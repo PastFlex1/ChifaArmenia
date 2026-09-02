@@ -154,6 +154,15 @@ function printTicket(jobId, order, ticketType) {
           
           writeData(ALIGN_CENTER);
           writeData(textToBuffer('--------------------------------'));
+          if (order.notes) {
+            writeData(ALIGN_LEFT);
+            writeData(BOLD_ON);
+            writeData(textToBuffer('** OBSERVACIONES: **'));
+            writeData(BOLD_OFF);
+            writeData(textToBuffer(order.notes));
+            writeData(ALIGN_CENTER);
+            writeData(textToBuffer('--------------------------------'));
+          }
           writeData(textToBuffer('FIN DE COMANDA'));
         }
         

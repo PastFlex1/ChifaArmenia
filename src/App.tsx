@@ -29,6 +29,7 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableNumber, setTableNumber] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -555,6 +556,7 @@ export default function App() {
     setCart([]);
     setTableNumber('');
     setCustomerName('');
+    setOrderNotes('');
     setCashReceived('');
   };
 
@@ -771,6 +773,7 @@ export default function App() {
         date: orderDate,
         customerName: customerName.trim(),
         tableNumber: targetTableId,
+        notes: orderNotes.trim() || undefined,
         items: cart.map(item => ({
           ...item,
           printedQuantity: item.printedQuantity || 0
@@ -897,6 +900,7 @@ export default function App() {
       date: new Date().toISOString(),
       customerName: customerName.trim(),
       tableNumber: tableNumber || 'S/N',
+      notes: orderNotes.trim() || undefined,
       items: [...cart],
       total: cartTotal,
       totalCost,
@@ -1547,6 +1551,17 @@ export default function App() {
               />
             </div>
           )}
+
+          {/* Observaciones - Visible para TODOS los tipos */}
+          <div className="relative">
+            <textarea
+              placeholder="📝 Observaciones (Ej: Sin picante, poco sal, extra salsa...)"
+              rows={2}
+              className="w-full px-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none placeholder:normal-case placeholder:font-medium placeholder:text-slate-400 resize-none"
+              value={orderNotes}
+              onChange={(e) => setOrderNotes(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* Cart Items */}
