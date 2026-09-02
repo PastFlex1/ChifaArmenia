@@ -76,11 +76,16 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`));
           writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
           if (order.tableNumber) {
-             writeData(textToBuffer(`MESA: ${order.tableNumber}`));
+            const normT = order.tableNumber.trim().toLowerCase();
+            if (normT === 'pedidosya' || normT === 'pedidos ya' || normT.startsWith('pedidos')) writeData(textToBuffer('TIPO: PEDIDOS YA'));
+            else if (normT === 'rappi') writeData(textToBuffer('TIPO: RAPPI'));
+            else if (normT === 'uber' || normT === 'uber eats' || normT.startsWith('uber')) writeData(textToBuffer('TIPO: UBER EATS'));
+            else if (normT === 'domicilio' || normT === 'para llevar') writeData(textToBuffer('TIPO: DOMICILIO'));
+            else writeData(textToBuffer(`MESA: ${order.tableNumber}`));
           }
           
           writeData(textToBuffer('--------------------------------'));
-          writeData(textToBuffer(`Cliente: ${order.customerName ? order.customerName : '.......................'}`));
+          writeData(textToBuffer('Cliente: .......................'));
           writeData(textToBuffer('C.I: ...........................'));
           writeData(textToBuffer('Correo: ........................'));
           writeData(textToBuffer('Telf: ..........................'));

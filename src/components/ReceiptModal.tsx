@@ -262,12 +262,13 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                         })()}
                       </p>
                     )}
+                    {/* Nombre del cliente: NO se muestra en nota de venta */}
                 </div>
 
                 <div className="flex flex-col gap-1 mb-4 text-xs font-bold border-t-2 border-black border-dashed pt-4 font-sans text-left">
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span className="shrink-0 font-bold">CLIENTE:</span>
-                    <span className="flex-1 border-b border-black ml-2 mb-[2px] font-black uppercase text-xs pl-1 text-left">{order.customerName || ''}</span>
+                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
                   </div>
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>C.I:</span>
