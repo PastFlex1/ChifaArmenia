@@ -58,6 +58,9 @@ export default function App() {
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
 
+  const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+  const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
   // Inventories State
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
@@ -93,10 +96,13 @@ export default function App() {
         const keys = Object.keys(drafts);
         if (keys.length > 0) {
           setSyncState('syncing');
-          for (const tNum of keys) {
-            const success = await syncTableToFirestore(drafts[tNum], activeTables, rawMaterials, drinks, dishes, combos, orders);
-            if (success) {
-              removeLocalDraft(tNum);
+          for (const key of keys) {
+            const draft = drafts[key];
+            if ((draft.branchId || '1') === currentBranchId) {
+              const success = await syncTableToFirestore(draft, activeTables, rawMaterials, drinks, dishes, combos, orders);
+              if (success) {
+                removeLocalDraft(draft.tableNumber, currentBranchId);
+              }
             }
           }
           if (isMounted) setSyncState('synced');
@@ -114,15 +120,18 @@ export default function App() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeTables, rawMaterials, drinks, dishes, combos, isDbLoaded]);
+  }, [activeTables, rawMaterials, drinks, dishes, combos, isDbLoaded, currentBranchId]);
 
-
-
-  // Limpiar carrito si la mesa activa fue liberada remotamente
+  // Limpiar carrito si la mesa activa fue liberada remotamente en ESTA MISMA sucursal
   useEffect(() => {
     const handleTableFreed = (e: any) => {
-      const freedTable = e.detail;
-      if (activeTableId && activeTableId.trim().toLowerCase() === freedTable.trim().toLowerCase()) {
+      const detail = typeof e.detail === 'object' ? e.detail : { tableNumber: e.detail, branchId: undefined };
+      const freedTable = detail.tableNumber;
+      const freedBranch = detail.branchId;
+
+      if (freedBranch && freedBranch !== currentBranchId) return;
+
+      if (activeTableId && activeTableId.trim().toLowerCase() === (freedTable || '').trim().toLowerCase()) {
         Swal.fire({
           title: 'Mesa Liberada',
           text: `La mesa ${freedTable} fue cobrada o liberada desde otra computadora.`,
@@ -139,7 +148,7 @@ export default function App() {
     };
     window.addEventListener('tableFreed', handleTableFreed);
     return () => window.removeEventListener('tableFreed', handleTableFreed);
-  }, [activeTableId, currentView]);
+  }, [activeTableId, currentView, currentBranchId]);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
@@ -204,14 +213,23 @@ export default function App() {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'removed') {
           const removedData = change.doc.data();
-          const tNum = removedData?.tableNumber || change.doc.id;
+          const docId = change.doc.id;
+          const tBranch = removedData?.branchId || (docId.includes('_') ? docId.split('_')[0] : '1');
+          const tNum = removedData?.tableNumber || (docId.includes('_') ? docId.substring(docId.indexOf('_') + 1) : docId);
           if (tNum) {
-            markTableAsFreed(tNum);
-            window.dispatchEvent(new CustomEvent('tableFreed', { detail: tNum }));
+            markTableAsFreed(tNum, undefined, tBranch);
+            window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch } }));
           }
         }
       });
-      setActiveTables(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as TableOrder)));
+      setActiveTables(snapshot.docs.map(doc => {
+        const data = doc.data();
+        const docId = doc.id;
+        const branchId = data.branchId || (docId.includes('_') ? docId.split('_')[0] : '1');
+        const tableNumber = data.tableNumber || (docId.includes('_') ? docId.substring(docId.indexOf('_') + 1) : docId);
+        const branchName = data.branchName || (branchId === '2' ? 'Sucursal 2' : 'Matriz');
+        return { ...data, id: docId, tableNumber, branchId, branchName } as TableOrder;
+      }));
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     }, (error) => {
       console.error("Error fetching tables:", error);
@@ -222,10 +240,12 @@ export default function App() {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added' || change.type === 'modified') {
           const data = change.doc.data();
+          const docId = change.doc.id;
+          const freedBranch = data?.branchId || (docId.includes('_') ? docId.split('_')[0] : '1');
           if (data && data.tableNumber) {
             const freedAtMs = data.freedAtTimestamp || (data.freedAt ? new Date(data.freedAt).getTime() : Date.now());
-            markTableAsFreed(data.tableNumber, freedAtMs);
-            window.dispatchEvent(new CustomEvent('tableFreed', { detail: data.tableNumber }));
+            markTableAsFreed(data.tableNumber, freedAtMs, freedBranch);
+            window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: data.tableNumber, branchId: freedBranch } }));
           }
         }
       });
@@ -300,11 +320,12 @@ export default function App() {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
           const order = change.doc.data() as Order;
+          const orderBranch = order.branchId || '1';
           const normT = (order.tableNumber || '').trim().toLowerCase();
           if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
             const orderTime = new Date(order.date).getTime();
-            markTableAsFreed(order.tableNumber, orderTime);
-            if (activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
+            markTableAsFreed(order.tableNumber, orderTime, orderBranch);
+            if (orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
               setCart([]);
               setActiveTableId(null);
               setTableNumber('');
@@ -316,26 +337,26 @@ export default function App() {
         }
       });
 
-      purgeDraftsForCompletedOrders(fetchedOrders);
+      purgeDraftsForCompletedOrders(fetchedOrders, currentBranchId);
       setOrders(fetchedOrders);
     }, (error) => {
       console.error("Error fetching orders:", error);
     });
 
     return () => unsubOrders();
-  }, [timeRange, customDateRange]);
+  }, [timeRange, customDateRange, currentBranchId]);
 
   // Purga continua y automática de localStorage para mesas cobradas
   useEffect(() => {
     const runPurge = () => {
       if (orders && orders.length > 0) {
-        purgeDraftsForCompletedOrders(orders);
+        purgeDraftsForCompletedOrders(orders, currentBranchId);
       }
     };
     runPurge();
     const timer = setInterval(runPurge, 3000);
     return () => clearInterval(timer);
-  }, [orders]);
+  }, [orders, currentBranchId]);
 
   // Derived POS Items from Inventories
   const posItems: MenuItem[] = useMemo(() => {
@@ -599,9 +620,9 @@ export default function App() {
     const norm = tNumber.trim().toLowerCase();
     const isSpecialType = isNonTableType(norm);
 
-    // Cargar borrador local o mesa de Firestore
-    const localDraft = getLocalDraft(tNumber);
-    const firestoreTable = activeTables.find(t => t.tableNumber.trim().toLowerCase() === norm);
+    // Cargar borrador local o mesa de Firestore de ESTA sucursal
+    const localDraft = getLocalDraft(tNumber, currentBranchId);
+    const firestoreTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber.trim().toLowerCase() === norm);
 
     const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
 
@@ -630,16 +651,21 @@ export default function App() {
     if (result.isConfirmed) {
       try {
         const batch = writeBatch(db);
-        batch.delete(doc(db, 'active_tables', tableNum));
-        batch.set(doc(db, 'freed_tables', tableNum), {
+        const docId = `${currentBranchId}_${tableNum}`;
+        batch.delete(doc(db, 'active_tables', docId));
+        if (currentBranchId === '1') {
+          batch.delete(doc(db, 'active_tables', tableNum));
+        }
+        batch.set(doc(db, 'freed_tables', docId), {
           tableNumber: tableNum,
+          branchId: currentBranchId,
           freedAt: new Date().toISOString(),
           freedAtTimestamp: Date.now(),
           reason: 'manual_delete'
         });
         await batch.commit();
-        removeLocalDraft(tableNum);
-        markTableAsFreed(tableNum);
+        removeLocalDraft(tableNum, currentBranchId);
+        markTableAsFreed(tableNum, undefined, currentBranchId);
         Swal.fire({
           title: 'Comanda Liberada',
           text: `La comanda de "${tableNum}" ha sido descartada exitosamente.`,
@@ -746,7 +772,7 @@ export default function App() {
       if (latencyInfo.isOnline && latencyInfo.isFast) {
         const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
         if (success) {
-          removeLocalDraft(targetTable);
+          removeLocalDraft(targetTable, currentBranchId);
         }
       }
       setCart([]);
@@ -814,7 +840,7 @@ export default function App() {
         return;
       }
 
-      const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
+      const oldItems = targetTableId ? (activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId)?.items || []) : [];
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
 
       const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
@@ -825,9 +851,6 @@ export default function App() {
 
       // Always record the exact moment of payment/checkout as the sale date
       const orderDate = new Date().toISOString();
-
-      const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-      const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
 
       const newOrder: Order = {
         id: Date.now().toString(),
@@ -868,9 +891,14 @@ export default function App() {
 
       batch.set(doc(db, 'orders', newOrder.id), newOrder);
       if (targetTableId && !isNonTableType(targetTableId)) {
-        batch.delete(doc(db, 'active_tables', targetTableId));
-        batch.set(doc(db, 'freed_tables', targetTableId), {
+        const docId = `${currentBranchId}_${targetTableId}`;
+        batch.delete(doc(db, 'active_tables', docId));
+        if (currentBranchId === '1') {
+          batch.delete(doc(db, 'active_tables', targetTableId));
+        }
+        batch.set(doc(db, 'freed_tables', docId), {
           tableNumber: targetTableId,
+          branchId: currentBranchId,
           freedAt: orderDate,
           freedAtTimestamp: Date.now(),
           reason: 'checkout'
@@ -881,7 +909,7 @@ export default function App() {
       setOrderCounter(nextOrderNumber);
       setCompletedOrder(newOrder);
       if (targetTableId) {
-        markTableAsFreed(targetTableId);
+        markTableAsFreed(targetTableId, undefined, currentBranchId);
       }
       clearCart();
       setActiveTableId(null);
@@ -919,7 +947,7 @@ export default function App() {
     setIsCheckingOut(true);
 
     try {
-      const previousTable = activeTables.find(t => t.tableNumber === targetTableId);
+      const previousTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId);
       const oldItems = previousTable ? previousTable.items : [];
 
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, []);
@@ -932,9 +960,14 @@ export default function App() {
         if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
       });
       if (targetTableId && !isNonTableType(targetTableId)) {
-        batch.delete(doc(db, 'active_tables', targetTableId));
-        batch.set(doc(db, 'freed_tables', targetTableId), {
+        const docId = `${currentBranchId}_${targetTableId}`;
+        batch.delete(doc(db, 'active_tables', docId));
+        if (currentBranchId === '1') {
+          batch.delete(doc(db, 'active_tables', targetTableId));
+        }
+        batch.set(doc(db, 'freed_tables', docId), {
           tableNumber: targetTableId,
+          branchId: currentBranchId,
           freedAt: new Date().toISOString(),
           freedAtTimestamp: Date.now(),
           reason: 'freed'
@@ -942,7 +975,7 @@ export default function App() {
       }
 
       await batch.commit();
-      markTableAsFreed(targetTableId);
+      markTableAsFreed(targetTableId, undefined, currentBranchId);
       Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
       clearCart();
       setActiveTableId(null);
@@ -1345,7 +1378,7 @@ export default function App() {
             </div>
           ) : currentView === 'mesas' ? (
             <MesasView
-              activeTables={activeTables.filter(t => (t.branchId || '1') === (currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1')))}
+              activeTables={activeTables.filter(t => (t.branchId || '1') === currentBranchId)}
               onSelectTable={handleTableClick}
               onDeleteTable={handleDeleteTable}
               totalTables={30}
@@ -2103,7 +2136,7 @@ export default function App() {
             const targetTable = (activeTableId || tableNumber).trim();
             const normTarget = targetTable.toLowerCase();
             if (normTarget && normTarget !== 'para llevar' && normTarget !== 'llevar' && normTarget !== 'domicilio' && completedOrder.id.startsWith('preview')) {
-              const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name);
+              const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name, currentBranchId, currentBranchName);
               if (latencyInfo.isOnline && latencyInfo.isFast) {
                 await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
               }

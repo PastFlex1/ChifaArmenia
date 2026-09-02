@@ -75,12 +75,13 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
   const sellers = useMemo(() => {
     const list = new Map<string, string>();
     orders.forEach(o => {
+      if (selectedBranch !== 'all' && (o.branchId || '1') !== selectedBranch) return;
       if (o.sellerId && o.sellerName) {
          list.set(o.sellerId, o.sellerName);
       }
     });
     return Array.from(list.entries()).map(([id, name]) => ({ id, name }));
-  }, [orders]);
+  }, [orders, selectedBranch]);
 
   const filteredOrders = useMemo(() => {
     let filtered = orders;
@@ -297,39 +298,47 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
           {/* Sucursal */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
             <span className="text-[10px] font-black uppercase text-slate-500 px-2">Sucursal:</span>
-            <button
-              type="button"
-              onClick={() => setSelectedBranch('1')}
-              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                selectedBranch === '1'
-                  ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
-                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-              }`}
-            >
-              📍 Matriz
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedBranch('2')}
-              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                selectedBranch === '2'
-                  ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
-                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-              }`}
-            >
-              📍 Sucursal 2
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedBranch('all')}
-              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                selectedBranch === 'all'
-                  ? 'bg-black text-[#FFD700] shadow-none translate-y-[1px]'
-                  : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-              }`}
-            >
-              📍 Todas
-            </button>
+            {currentUser?.cedula === '0923809529001' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBranch('1')}
+                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                    selectedBranch === '1'
+                      ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
+                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  }`}
+                >
+                  📍 Matriz
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBranch('2')}
+                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                    selectedBranch === '2'
+                      ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
+                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  }`}
+                >
+                  📍 Sucursal 2
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBranch('all')}
+                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
+                    selectedBranch === 'all'
+                      ? 'bg-black text-[#FFD700] shadow-none translate-y-[1px]'
+                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  }`}
+                >
+                  📍 Todas
+                </button>
+              </>
+            ) : (
+              <span className="px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs bg-[#B91C1C] text-white">
+                📍 {defaultBranch === '2' ? 'Sucursal 2 (San Rafael)' : 'Matriz (Armenia)'}
+              </span>
+            )}
           </div>
 
           {/* Vendedor (si es Administrador) */}

@@ -54,6 +54,18 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
     handleCancel();
   };
 
+  const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+  const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+
+  const branchUsers = React.useMemo(() => {
+    return users.filter(user => {
+      if (user.id === '1') return currentBranchId === '1';
+      if (user.id === '2' || user.cedula === '1714851332001') return currentBranchId === '2';
+      const uBranch = user.branchId || '1';
+      return uBranch === currentBranchId;
+    });
+  }, [users, currentBranchId]);
+
   const handleEdit = (user: UserAccount) => {
     setEditingId(user.id);
     setCedula(user.cedula);
@@ -93,7 +105,7 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2">
             {editingId ? <Edit2 className="w-5 h-5 text-[#B91C1C]" /> : <UserPlus className="w-5 h-5 text-[#B91C1C]" />}
-            {editingId ? 'Editar Trabajador' : 'Nuevo Trabajador'}
+            {editingId ? `Editar Trabajador (${currentBranchName})` : `Nuevo Trabajador (${currentBranchName})`}
           </h2>
           {editingId && (
             <button onClick={handleCancel} className="bg-white border-2 border-black rounded-lg p-1 hover:bg-slate-200">
@@ -149,16 +161,16 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
         <div className="p-4 border-b-2 border-black bg-slate-50 rounded-t-2xl flex justify-between items-center shrink-0">
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2">
             <Users className="w-5 h-5 text-[#B91C1C]" />
-            Personal
+            Personal - {currentBranchName}
           </h2>
           <span className="text-sm font-bold bg-white px-3 py-1 border-2 border-black rounded-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-            {users.length} Registros
+            {branchUsers.length} Registros
           </span>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {users.map((user) => (
+            {branchUsers.map((user) => (
               <div key={user.id} className="bg-white border-2 border-black rounded-xl p-4 flex flex-col gap-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] relative">
                  {user.role === 'Administrador' && (
                   <div className="absolute -top-3 -right-3 bg-[#B91C1C] text-white p-1.5 rounded-full border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">

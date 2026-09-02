@@ -12,42 +12,59 @@ export interface LatencyStatus {
   latencyMs: number;
 }
 
-// Registro en memoria de timestamps en que las mesas fueron liberadas/cobradas
+// Registro en memoria de timestamps en que las mesas fueron liberadas/cobradas, separado por sucursal
 const freedTablesTimestamps: Record<string, number> = {};
 
-export function markTableAsFreed(tableNumber: string, timestamp?: number): void {
+const getFreedKey = (tableNumber: string, branchId?: string) => `${branchId || '1'}_${tableNumber.trim().toLowerCase()}`;
+
+export function markTableAsFreed(tableNumber: string, timestamp?: number, branchId?: string): void {
   const normalized = tableNumber.trim();
   if (!normalized) return;
   const ts = timestamp || Date.now();
-  freedTablesTimestamps[normalized.toLowerCase()] = ts;
-  removeLocalDraft(normalized);
+  const key = getFreedKey(normalized, branchId);
+  freedTablesTimestamps[key] = ts;
+  removeLocalDraft(normalized, branchId);
 }
 
-export function isTableFreed(tableNumber: string, orderTimestamp?: number): boolean {
+export function isTableFreed(tableNumber: string, orderTimestamp?: number, branchId?: string): boolean {
   const normalized = tableNumber.trim().toLowerCase();
-  const freedAt = freedTablesTimestamps[normalized];
+  const key = getFreedKey(normalized, branchId);
+  const freedAt = freedTablesTimestamps[key];
   if (!freedAt) return false;
   if (!orderTimestamp) return true;
   return orderTimestamp <= freedAt;
 }
 
-// Persistencia Local Instantánea (0ms)
-export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?: string, sellerName?: string, branchId?: string, branchName?: string): TableOrder | null {
+// Persistencia Local Instantánea (0ms) con aislamiento por sucursal
+export function saveLocalDraft(
+  tableNumber: string, 
+  items: CartItem[], 
+  sellerId?: string, 
+  sellerName?: string, 
+  branchId: string = '1', 
+  branchName?: string
+): TableOrder | null {
   const normalized = tableNumber.trim();
   if (!normalized) return null;
+  const effectiveBranchId = branchId || '1';
+  const effectiveBranchName = branchName || (effectiveBranchId === '2' ? 'Sucursal 2' : 'Matriz');
 
   if (!items || items.length === 0) {
-    removeLocalDraft(normalized);
+    removeLocalDraft(normalized, effectiveBranchId);
     return null;
   }
 
   const drafts = getAllLocalDrafts();
-  const existingKey = Object.keys(drafts).find(key => key.trim().toLowerCase() === normalized.toLowerCase());
+  const draftCompositeKey = `${effectiveBranchId}_${normalized.toLowerCase()}`;
+  const existingKey = Object.keys(drafts).find(key => {
+    const d = drafts[key];
+    return (d.branchId || '1') === effectiveBranchId && d.tableNumber.trim().toLowerCase() === normalized.toLowerCase();
+  });
   const existing = existingKey ? drafts[existingKey] : null;
   const nowMs = Date.now();
   
   const draftOrder: TableOrder = {
-    id: normalized,
+    id: `${effectiveBranchId}_${normalized}`,
     tableNumber: normalized,
     items: [...items],
     createdAt: existing ? existing.createdAt : new Date(nowMs).toISOString(),
@@ -55,15 +72,15 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
     updatedAtTimestamp: nowMs,
     sellerId,
     sellerName,
-    branchId,
-    branchName
+    branchId: effectiveBranchId,
+    branchName: effectiveBranchName
   };
-  // Si la mesa se está modificando, remover cualquier marca de tiempo de liberación previa si es anterior
-  const normLower = normalized.toLowerCase();
-  if (freedTablesTimestamps[normLower] && nowMs > freedTablesTimestamps[normLower]) {
-    delete freedTablesTimestamps[normLower];
+
+  const freedKey = getFreedKey(normalized, effectiveBranchId);
+  if (freedTablesTimestamps[freedKey] && nowMs > freedTablesTimestamps[freedKey]) {
+    delete freedTablesTimestamps[freedKey];
   }
-  drafts[normalized] = draftOrder;
+  drafts[draftCompositeKey] = draftOrder;
   try {
     localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
   } catch (e) {
@@ -73,30 +90,37 @@ export function saveLocalDraft(tableNumber: string, items: CartItem[], sellerId?
   return draftOrder;
 }
 
-export function getLocalDraft(tableNumber: string): TableOrder | null {
+export function getLocalDraft(tableNumber: string, branchId: string = '1'): TableOrder | null {
   const normalized = tableNumber.trim().toLowerCase();
   if (!normalized) return null;
+  const effectiveBranchId = branchId || '1';
   const drafts = getAllLocalDrafts();
-  const foundKey = Object.keys(drafts).find(key => key.trim().toLowerCase() === normalized);
+  const foundKey = Object.keys(drafts).find(key => {
+    const d = drafts[key];
+    return (d.branchId || '1') === effectiveBranchId && d.tableNumber.trim().toLowerCase() === normalized;
+  });
   if (!foundKey) return null;
   const draft = drafts[foundKey];
   if (!draft) return null;
 
   // Si la mesa está liberada o la fecha del borrador es previa a la liberación, borrar borrador y retornar null
-  if (isTableFreed(normalized, draft.updatedAtTimestamp)) {
-    removeLocalDraft(normalized);
+  if (isTableFreed(normalized, draft.updatedAtTimestamp, effectiveBranchId)) {
+    removeLocalDraft(normalized, effectiveBranchId);
     return null;
   }
   return draft;
 }
 
-export function removeLocalDraft(tableNumber: string): void {
+export function removeLocalDraft(tableNumber: string, branchId?: string): void {
   const normalized = tableNumber.trim().toLowerCase();
   if (!normalized) return;
   const drafts = getAllLocalDrafts();
   let changed = false;
   Object.keys(drafts).forEach(key => {
-    if (key.trim().toLowerCase() === normalized) {
+    const d = drafts[key];
+    const matchTable = d.tableNumber?.trim().toLowerCase() === normalized || key.trim().toLowerCase() === normalized;
+    const matchBranch = !branchId || (d.branchId || '1') === (branchId || '1');
+    if (matchTable && matchBranch) {
       delete drafts[key];
       changed = true;
     }
@@ -110,7 +134,7 @@ export function removeLocalDraft(tableNumber: string): void {
   }
 }
 
-export function purgeDraftsForCompletedOrders(orders: Order[]): void {
+export function purgeDraftsForCompletedOrders(orders: Order[], currentBranchId?: string): void {
   if (!orders || orders.length === 0) return;
   const raw = localStorage.getItem(DRAFTS_STORAGE_KEY);
   if (!raw) return;
@@ -123,14 +147,16 @@ export function purgeDraftsForCompletedOrders(orders: Order[]): void {
   const keys = Object.keys(drafts);
   if (keys.length === 0) return;
 
-  const latestOrderByTable: Record<string, number> = {};
+  const latestOrderByTableBranch: Record<string, number> = {};
   orders.forEach(order => {
     if (order.tableNumber) {
       const normTable = order.tableNumber.trim().toLowerCase();
       if (normTable !== 'para llevar' && normTable !== 'llevar' && normTable !== 'domicilio') {
+        const oBranch = order.branchId || '1';
+        const key = `${oBranch}_${normTable}`;
         const orderMs = new Date(order.date).getTime();
-        if (!latestOrderByTable[normTable] || orderMs > latestOrderByTable[normTable]) {
-          latestOrderByTable[normTable] = orderMs;
+        if (!latestOrderByTableBranch[key] || orderMs > latestOrderByTableBranch[key]) {
+          latestOrderByTableBranch[key] = orderMs;
         }
       }
     }
@@ -139,16 +165,20 @@ export function purgeDraftsForCompletedOrders(orders: Order[]): void {
   let changed = false;
   keys.forEach(key => {
     const draft = drafts[key];
-    const normKey = key.trim().toLowerCase();
-    const orderMs = latestOrderByTable[normKey];
+    const dBranch = draft.branchId || '1';
+    if (currentBranchId && dBranch !== currentBranchId) return;
+
+    const normKey = (draft.tableNumber || key).trim().toLowerCase();
+    const orderKey = `${dBranch}_${normKey}`;
+    const orderMs = latestOrderByTableBranch[orderKey];
     if (orderMs) {
       const draftMs = draft.updatedAtTimestamp || (draft.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
       if (orderMs >= draftMs - 60000) {
         delete drafts[key];
-        freedTablesTimestamps[normKey] = orderMs;
+        freedTablesTimestamps[getFreedKey(normKey, dBranch)] = orderMs;
         changed = true;
       }
-    } else if (isTableFreed(normKey, draft.updatedAtTimestamp)) {
+    } else if (isTableFreed(normKey, draft.updatedAtTimestamp, dBranch)) {
       delete drafts[key];
       changed = true;
     }
@@ -231,40 +261,48 @@ export async function syncTableToFirestore(
 ): Promise<boolean> {
   if (!tableOrder || !tableOrder.tableNumber) return true;
   const normalizedTable = tableOrder.tableNumber.trim();
+  const branchId = tableOrder.branchId || '1';
   const syncStartTime = Date.now();
   const draftTime = tableOrder.updatedAtTimestamp || syncStartTime;
 
   // Si el borrador no tiene items, no escribirlo en active_tables
   if (!tableOrder.items || tableOrder.items.length === 0) {
-    removeLocalDraft(normalizedTable);
+    removeLocalDraft(normalizedTable, branchId);
     return true;
   }
 
   // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
-  if (isTableFreed(normalizedTable, draftTime)) {
-    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${normalizedTable} fue liberada/cobrada.`);
-    removeLocalDraft(normalizedTable);
+  if (isTableFreed(normalizedTable, draftTime, branchId)) {
+    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${normalizedTable} (Sucursal ${branchId}) fue liberada/cobrada.`);
+    removeLocalDraft(normalizedTable, branchId);
     return true;
   }
 
-  // Verificar si existe una nota de venta (order) reciente para esta mesa
+  // Verificar si existe una nota de venta (order) reciente para esta mesa EN LA MISMA SUCURSAL
   if (orders && orders.length > 0) {
-    const tableOrders = orders.filter(o => o.tableNumber && o.tableNumber.trim().toLowerCase() === normalizedTable.toLowerCase());
+    const tableOrders = orders.filter(o => 
+      (o.branchId || '1') === branchId && 
+      o.tableNumber && 
+      o.tableNumber.trim().toLowerCase() === normalizedTable.toLowerCase()
+    );
     if (tableOrders.length > 0) {
       tableOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const latestOrder = tableOrders[0];
       const orderTime = new Date(latestOrder.date).getTime();
       
       if (orderTime >= draftTime - 60000) {
-        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${normalizedTable}. Borrando borrador obsoleto.`);
-        removeLocalDraft(normalizedTable);
+        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${normalizedTable} en Sucursal ${branchId}. Borrando borrador obsoleto.`);
+        removeLocalDraft(normalizedTable, branchId);
         return true; 
       }
     }
   }
 
   try {
-    const previousTable = activeTables.find(t => t.tableNumber === tableOrder.tableNumber);
+    const previousTable = activeTables.find(t => 
+      (t.branchId || '1') === branchId && 
+      t.tableNumber.trim().toLowerCase() === normalizedTable.toLowerCase()
+    );
     const oldItems = previousTable ? previousTable.items : [];
     const newItems = tableOrder.items;
 
@@ -329,15 +367,28 @@ export async function syncTableToFirestore(
       if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
     });
 
+    const docId = `${branchId}_${normalizedTable}`;
     if (newItems.length === 0) {
-      batch.delete(doc(db, 'active_tables', tableOrder.tableNumber));
+      batch.delete(doc(db, 'active_tables', docId));
+      if (branchId === '1') {
+        batch.delete(doc(db, 'active_tables', normalizedTable));
+      }
     } else {
       // Verificación de seguridad justo antes del commit
-      if (isTableFreed(tableOrder.tableNumber, syncStartTime)) {
-        console.log(`[syncTableToFirestore] Commit cancelado: La mesa ${tableOrder.tableNumber} fue liberada/cobrada durante la sincronización.`);
+      if (isTableFreed(normalizedTable, syncStartTime, branchId)) {
+        console.log(`[syncTableToFirestore] Commit cancelado: La mesa ${normalizedTable} (Sucursal ${branchId}) fue liberada/cobrada durante la sincronización.`);
         return true;
       }
-      batch.set(doc(db, 'active_tables', tableOrder.tableNumber), tableOrder);
+      batch.set(doc(db, 'active_tables', docId), {
+        ...tableOrder,
+        id: docId,
+        branchId,
+        branchName: tableOrder.branchName || (branchId === '2' ? 'Sucursal 2' : 'Matriz')
+      });
+      // Si existía con el ID sin prefijo heredado, limpiarlo para evitar duplicidad
+      if (branchId === '2') {
+        batch.delete(doc(db, 'active_tables', normalizedTable));
+      }
     }
 
     await batch.commit();
