@@ -35,11 +35,11 @@ export default function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [activeTables, setActiveTables] = useState<TableOrder[]>([]);
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
-  
+
   // Sync State & Latency Monitor
   const [syncState, setSyncState] = useState<SyncState>('synced');
   const [latencyInfo, setLatencyInfo] = useState<LatencyStatus>({ isOnline: true, isFast: true, latencyMs: 0 });
-  
+
   // Mobile Cart State
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
@@ -126,7 +126,7 @@ export default function App() {
         setActiveTableId(null);
         setTableNumber('');
         if (currentView === 'pos') {
-           setCurrentView('mesas');
+          setCurrentView('mesas');
         }
       }
     };
@@ -248,7 +248,7 @@ export default function App() {
   useEffect(() => {
     let qOrders = collection(db, 'orders') as any;
     const now = new Date();
-    
+
     if (timeRange === 'day') {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       qOrders = query(collection(db, 'orders'), where('date', '>=', startOfDay.toISOString()));
@@ -343,7 +343,7 @@ export default function App() {
         isDrink: false
       };
     });
-    
+
     const bev: MenuItem[] = drinks.map(drink => ({
       id: drink.id,
       name: drink.name,
@@ -383,7 +383,12 @@ export default function App() {
       };
     });
 
-    return [...d, ...bev, ...c];
+    const deliveryFees: MenuItem[] = [
+      { id: '__delivery_3__', name: 'DOMICILIO $3', category: 'Bebidas', price: 3, cost: 0, isDrink: false },
+      { id: '__delivery_4__', name: 'DOMICILIO $2', category: 'Bebidas', price: 2, cost: 0, isDrink: false },
+    ];
+
+    return [...d, ...bev, ...c, ...deliveryFees];
   }, [dishes, drinks, rawMaterials, combos]);
 
   // Filter items based on category and search
@@ -400,38 +405,39 @@ export default function App() {
         matchesCategory = item.category === activeCategory;
       }
 
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            (item.description?.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.description?.toLowerCase().includes(searchQuery.toLowerCase()));
       return searchQuery ? matchesSearch : matchesCategory;
     });
   }, [posItems, activeCategory, searchQuery]);
 
   const getMaxAvailable = (menuItem: MenuItem): number => {
+    if (menuItem.id === '__delivery_3__' || menuItem.id === '__delivery_4__') return Infinity;
     if (menuItem.isCombo) {
       const combo = combos.find(c => c.id === menuItem.id);
       if (!combo || !combo.items || combo.items.length === 0) return Infinity;
-      
+
       let minAvailable = Infinity;
       combo.items.forEach((cItem: any) => {
         if (cItem.type === 'drink') {
           const d = drinks.find(dr => dr.id === cItem.itemId);
           if (d) {
-             const available = Math.floor(d.stock / cItem.quantity);
-             if (available < minAvailable) minAvailable = available;
+            const available = Math.floor(d.stock / cItem.quantity);
+            if (available < minAvailable) minAvailable = available;
           } else {
-             minAvailable = 0;
+            minAvailable = 0;
           }
         } else {
           const dish = dishes.find(d => d.id === cItem.itemId);
           if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
-               const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-               if (rm) {
-                  const available = Math.floor(rm.stock / (ing.quantity * cItem.quantity));
-                  if (available < minAvailable) minAvailable = available;
-               } else {
-                  minAvailable = 0;
-               }
+              const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+              if (rm) {
+                const available = Math.floor(rm.stock / (ing.quantity * cItem.quantity));
+                if (available < minAvailable) minAvailable = available;
+              } else {
+                minAvailable = 0;
+              }
             });
           }
         }
@@ -444,15 +450,15 @@ export default function App() {
       // Dish doesn't track strictly without ingredients. If no ingredients or it's just a dish without recipe recorded:
       const dish = dishes.find(d => d.id === menuItem.id);
       if (!dish || !dish.ingredients || dish.ingredients.length === 0) return Infinity;
-      
+
       let minAvailable = Infinity;
       dish.ingredients.forEach(ing => {
         const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
         if (rm) {
-           const available = Math.floor(rm.stock / ing.quantity);
-           if (available < minAvailable) minAvailable = available;
+          const available = Math.floor(rm.stock / ing.quantity);
+          if (available < minAvailable) minAvailable = available;
         } else {
-           minAvailable = 0;
+          minAvailable = 0;
         }
       });
       return minAvailable;
@@ -462,16 +468,16 @@ export default function App() {
   // Cart operations
   const addToCart = (menuItem: MenuItem) => {
     const maxAvailable = getMaxAvailable(menuItem);
-    
+
     setCart((prev) => {
       const existing = prev.find((item) => item.menuItem.id === menuItem.id);
       const currentQty = existing ? existing.quantity : 0;
-      
+
       if (currentQty + 1 > maxAvailable) {
         Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
         return prev;
       }
-      
+
       if (existing) {
         return prev.map((item) =>
           item.menuItem.id === menuItem.id ? { ...item, quantity: item.quantity + 1 } : item
@@ -496,11 +502,11 @@ export default function App() {
       if (item.id === id) {
         const newQuantity = Math.max(0, item.quantity + delta);
         if (delta > 0) {
-           const maxAvailable = getMaxAvailable(item.menuItem);
-           if (newQuantity > maxAvailable) {
-             Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${item.menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
-             return item;
-           }
+          const maxAvailable = getMaxAvailable(item.menuItem);
+          if (newQuantity > maxAvailable) {
+            Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${item.menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
+            return item;
+          }
         }
         return { ...item, quantity: newQuantity };
       }
@@ -526,11 +532,11 @@ export default function App() {
         }
         if (newQuantity === '') return { ...item, quantity: '' as any }; // Permitir borrar temporalmente solo si admin
         if (isNaN(numQty) || numQty < 0) return item;
-        
+
         const maxAvailable = getMaxAvailable(item.menuItem);
         if (numQty > maxAvailable) {
-             Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${item.menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
-             return { ...item, quantity: maxAvailable };
+          Swal.fire({ title: 'Stock Insuficiente', text: `No hay suficiente stock para ${item.menuItem.name}. Stock disponible: ${maxAvailable}`, icon: 'warning', confirmButtonColor: '#000' });
+          return { ...item, quantity: maxAvailable };
         }
         return { ...item, quantity: numQty };
       }
@@ -540,12 +546,12 @@ export default function App() {
 
 
   const handleBlurQuantity = (id: string) => {
-     setCart((prev) => prev.filter(item => {
-        if (item.id === id && (item.quantity === '' || item.quantity <= 0)) {
-           return false;
-        }
-        return true;
-     }));
+    setCart((prev) => prev.filter(item => {
+      if (item.id === id && (item.quantity === '' || item.quantity <= 0)) {
+        return false;
+      }
+      return true;
+    }));
   };
 
   const clearCart = () => {
@@ -567,8 +573,8 @@ export default function App() {
   const isDeliveryApp = (tbl: string) => {
     const norm = (tbl || '').trim().toLowerCase();
     return norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos') ||
-           norm === 'rappi' ||
-           norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber');
+      norm === 'rappi' ||
+      norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber');
   };
 
   const isNonTableType = (tbl: string) => {
@@ -583,7 +589,7 @@ export default function App() {
     // Cargar borrador local o mesa de Firestore
     const localDraft = getLocalDraft(tNumber);
     const firestoreTable = activeTables.find(t => t.tableNumber.trim().toLowerCase() === norm);
-    
+
     const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
 
     setCart(loadedItems);
@@ -635,124 +641,124 @@ export default function App() {
     }
   };
 
-    const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[]) => {
-      const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
-      const newDrinks = drinks.map(d => ({ ...d }));
-  
-      const processItems = (items: CartItem[], multiplier: number) => {
-        items.forEach(cartItem => {
-          if (cartItem.menuItem.isCombo) {
-            const combo = combos.find(c => c.id === cartItem.menuItem.id);
-            if (combo) {
-              combo.items.forEach((cItem: any) => {
-                if (cItem.type === 'drink') {
-                  const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
-                  if (drinkIndex >= 0) {
-                    newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity * multiplier));
-                  }
-                } else {
-                  const dish = dishes.find(d => d.id === cItem.itemId);
-                  if (dish) {
-                     dish.ingredients.forEach(ing => {
-                       const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-                       if (rmIndex >= 0) {
-                         const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier);
-                         newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
-                       }
-                     });
-                  }
+  const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[]) => {
+    const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
+    const newDrinks = drinks.map(d => ({ ...d }));
+
+    const processItems = (items: CartItem[], multiplier: number) => {
+      items.forEach(cartItem => {
+        if (cartItem.menuItem.isCombo) {
+          const combo = combos.find(c => c.id === cartItem.menuItem.id);
+          if (combo) {
+            combo.items.forEach((cItem: any) => {
+              if (cItem.type === 'drink') {
+                const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
+                if (drinkIndex >= 0) {
+                  newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity * multiplier));
                 }
-              });
-            }
-          } else if (cartItem.menuItem.isDrink) {
-            const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
-            if (drinkIndex >= 0) {
-              const newVal = newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier);
-              newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
-            }
-          } else {
-            const dish = dishes.find(d => d.id === cartItem.menuItem.id);
-            if (dish) {
-               dish.ingredients.forEach(ing => {
-                 const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-                 if (rmIndex >= 0) {
-                   const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier);
-                   newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
-                 }
-               });
-            }
+              } else {
+                const dish = dishes.find(d => d.id === cItem.itemId);
+                if (dish) {
+                  dish.ingredients.forEach(ing => {
+                    const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+                    if (rmIndex >= 0) {
+                      const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier);
+                      newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                    }
+                  });
+                }
+              }
+            });
           }
-        });
-      };
-  
-      processItems(oldItems, -1); // Devolver items viejos (+ stock)
-      processItems(newItems, 1);  // Descontar items nuevos (- stock)
-  
-      return { newRawMaterials, newDrinks };
-    };
-
-    const handleSaveTable = async (customCart?: CartItem[] | any) => {
-      const targetTable = (activeTableId || tableNumber).trim();
-      if (!targetTable) {
-        Swal.fire({
-          title: 'Falta la Mesa',
-          text: 'Por favor, escribe el número de mesa antes de guardar.',
-          icon: 'warning',
-          confirmButtonColor: '#B91C1C'
-        });
-        return;
-      }
-
-      const norm = targetTable.toLowerCase();
-      if (isDeliveryApp(norm)) {
-        Swal.fire({
-          title: 'Cobro Obligatorio',
-          text: `Los pedidos de ${targetTable} no se pueden guardar como mesa abierta o borrador. Por favor, usa la opción "Cobrar Directo".`,
-          icon: 'warning',
-          confirmButtonColor: '#B91C1C'
-        });
-        return;
-      }
-
-      const itemsToSave = Array.isArray(customCart) ? customCart : cart;
-      if (itemsToSave.length === 0 || isCheckingOut) return;
-      setIsCheckingOut(true);
-      
-      const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name);
-      
-      try {
-        if (latencyInfo.isOnline && latencyInfo.isFast) {
-          const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
-          if (success) {
-            removeLocalDraft(targetTable);
+        } else if (cartItem.menuItem.isDrink) {
+          const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
+          if (drinkIndex >= 0) {
+            const newVal = newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier);
+            newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+          }
+        } else {
+          const dish = dishes.find(d => d.id === cartItem.menuItem.id);
+          if (dish) {
+            dish.ingredients.forEach(ing => {
+              const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+              if (rmIndex >= 0) {
+                const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier);
+                newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+              }
+            });
           }
         }
-        setCart([]);
-        setTableNumber('');
-        setActiveTableId(null);
-        setCurrentView('mesas');
-      } catch (e) {
-        console.error("Error al salir de mesa:", e);
-      } finally {
-        setIsCheckingOut(false);
-      }
+      });
     };
 
-    const handleCheckout = async () => {
-      if (cart.length === 0 || isCheckingOut) return;
-      
-      if (!tableNumber || tableNumber.trim() === '') {
-        Swal.fire({
-          title: 'Falta la Mesa',
-          text: 'Por favor, escribe el número de mesa o "Para llevar" en el campo antes de cobrar.',
-          icon: 'warning',
-          confirmButtonColor: '#B91C1C'
-        });
-        return;
+    processItems(oldItems, -1); // Devolver items viejos (+ stock)
+    processItems(newItems, 1);  // Descontar items nuevos (- stock)
+
+    return { newRawMaterials, newDrinks };
+  };
+
+  const handleSaveTable = async (customCart?: CartItem[] | any) => {
+    const targetTable = (activeTableId || tableNumber).trim();
+    if (!targetTable) {
+      Swal.fire({
+        title: 'Falta la Mesa',
+        text: 'Por favor, escribe el número de mesa antes de guardar.',
+        icon: 'warning',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
+
+    const norm = targetTable.toLowerCase();
+    if (isDeliveryApp(norm)) {
+      Swal.fire({
+        title: 'Cobro Obligatorio',
+        text: `Los pedidos de ${targetTable} no se pueden guardar como mesa abierta o borrador. Por favor, usa la opción "Cobrar Directo".`,
+        icon: 'warning',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
+
+    const itemsToSave = Array.isArray(customCart) ? customCart : cart;
+    if (itemsToSave.length === 0 || isCheckingOut) return;
+    setIsCheckingOut(true);
+
+    const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name);
+
+    try {
+      if (latencyInfo.isOnline && latencyInfo.isFast) {
+        const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
+        if (success) {
+          removeLocalDraft(targetTable);
+        }
       }
-      
-      setIsCheckingOut(true);
-  
+      setCart([]);
+      setTableNumber('');
+      setActiveTableId(null);
+      setCurrentView('mesas');
+    } catch (e) {
+      console.error("Error al salir de mesa:", e);
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (cart.length === 0 || isCheckingOut) return;
+
+    if (!tableNumber || tableNumber.trim() === '') {
+      Swal.fire({
+        title: 'Falta la Mesa',
+        text: 'Por favor, escribe el número de mesa o "Para llevar" en el campo antes de cobrar.',
+        icon: 'warning',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
+
+    setIsCheckingOut(true);
+
     try {
       const targetTableId = (activeTableId || tableNumber).trim();
       const oldItems = targetTableId ? (activeTables.find(t => t.tableNumber === targetTableId)?.items || []) : [];
@@ -760,7 +766,7 @@ export default function App() {
 
       const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
       const profit = cartTotal - totalCost;
-      
+
       const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
       const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
 
@@ -838,7 +844,7 @@ export default function App() {
   const handleFreeTableWithoutCheckout = async () => {
     const targetTableId = (activeTableId || tableNumber).trim();
     if (!targetTableId || isCheckingOut) return;
-    
+
     const result = await Swal.fire({
       title: '¿Liberar mesa sin cobrar?',
       text: "Se cancelará el pedido actual y se devolverá el inventario. Esta acción no se puede deshacer.",
@@ -851,15 +857,15 @@ export default function App() {
     });
 
     if (!result.isConfirmed) return;
-    
+
     setIsCheckingOut(true);
 
     try {
       const previousTable = activeTables.find(t => t.tableNumber === targetTableId);
       const oldItems = previousTable ? previousTable.items : [];
-      
+
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, []);
-      
+
       const batch = writeBatch(db);
       newRawMaterials.forEach((rm, index) => {
         if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
@@ -876,7 +882,7 @@ export default function App() {
           reason: 'freed'
         });
       }
-      
+
       await batch.commit();
       markTableAsFreed(targetTableId);
       Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
@@ -937,19 +943,19 @@ export default function App() {
               if (cItem.type === 'drink') {
                 const drink = drinks.find(d => d.id === cItem.itemId);
                 if (drink) {
-                   const current = updatedDrinks.get(drink.id) ?? drink.stock;
-                   updatedDrinks.set(drink.id, current + (cItem.quantity * cartItem.quantity));
+                  const current = updatedDrinks.get(drink.id) ?? drink.stock;
+                  updatedDrinks.set(drink.id, current + (cItem.quantity * cartItem.quantity));
                 }
               } else {
                 const dish = dishes.find(d => d.id === cItem.itemId);
                 if (dish) {
-                   dish.ingredients.forEach(ing => {
-                     const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-                     if (rm) {
-                       const current = updatedMaterials.get(rm.id) ?? rm.stock;
-                       updatedMaterials.set(rm.id, current + (ing.quantity * cItem.quantity * cartItem.quantity));
-                     }
-                   });
+                  dish.ingredients.forEach(ing => {
+                    const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+                    if (rm) {
+                      const current = updatedMaterials.get(rm.id) ?? rm.stock;
+                      updatedMaterials.set(rm.id, current + (ing.quantity * cItem.quantity * cartItem.quantity));
+                    }
+                  });
                 }
               }
             });
@@ -957,19 +963,19 @@ export default function App() {
         } else if (cartItem.menuItem.isDrink) {
           const drink = drinks.find(d => d.id === cartItem.menuItem.id);
           if (drink) {
-             const current = updatedDrinks.get(drink.id) ?? drink.stock;
-             updatedDrinks.set(drink.id, current + cartItem.quantity);
+            const current = updatedDrinks.get(drink.id) ?? drink.stock;
+            updatedDrinks.set(drink.id, current + cartItem.quantity);
           }
         } else {
           const dish = dishes.find(d => d.id === cartItem.menuItem.id);
           if (dish) {
-             dish.ingredients.forEach(ing => {
-               const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-               if (rm) {
-                 const current = updatedMaterials.get(rm.id) ?? rm.stock;
-                 updatedMaterials.set(rm.id, current + (ing.quantity * cartItem.quantity));
-               }
-             });
+            dish.ingredients.forEach(ing => {
+              const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+              if (rm) {
+                const current = updatedMaterials.get(rm.id) ?? rm.stock;
+                updatedMaterials.set(rm.id, current + (ing.quantity * cartItem.quantity));
+              }
+            });
           }
         }
       });
@@ -1018,16 +1024,16 @@ export default function App() {
       {showWelcome && (
         <WelcomeModal user={currentUser} onClose={() => setShowWelcome(false)} />
       )}
-      
+
       <div className="hidden lg:flex lg:w-[220px] xl:w-[260px] flex-col shrink-0 gap-2 h-full z-10">
         <div className="bg-[#B91C1C] text-white p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
           <div className="flex flex-col z-10">
             <span className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">Restaurante</span>
-            <h1 className="text-3xl font-black italic uppercase leading-tight">Chifa <br/>Mei Hua</h1>
+            <h1 className="text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
             <span className="text-[#FFD700] font-black uppercase tracking-widest text-sm mt-1">Sistema</span>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
-             <ChefHat className="w-32 h-32 text-white" />
+            <ChefHat className="w-32 h-32 text-white" />
           </div>
         </div>
 
@@ -1035,9 +1041,8 @@ export default function App() {
           {canView('mesas') && (
             <button
               onClick={() => setCurrentView('mesas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <LayoutGrid className="w-5 h-5" /> Mesas
             </button>
@@ -1050,9 +1055,8 @@ export default function App() {
                 setCart([]);
                 setCurrentView('pos');
               }}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <Store className="w-5 h-5" /> Punto de Venta
             </button>
@@ -1060,9 +1064,8 @@ export default function App() {
           {canView('materia_prima') && (
             <button
               onClick={() => setCurrentView('materia_prima')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <Package className="w-5 h-5" /> Materia Prima
             </button>
@@ -1070,9 +1073,8 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('inv_comida')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <ChefHat className="w-5 h-5" /> Inv. Comidas
             </button>
@@ -1080,9 +1082,8 @@ export default function App() {
           {canView('inv_bebidas') && (
             <button
               onClick={() => setCurrentView('inv_bebidas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <Wine className="w-5 h-5" /> Inv. Bebidas
             </button>
@@ -1090,22 +1091,20 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('combos')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <Layers className="w-5 h-5" /> Combos
             </button>
           )}
-          
+
           <div className="my-0.5 border-b border-dashed border-slate-200"></div>
 
           {canView('ventas') && (
             <button
               onClick={() => setCurrentView('ventas')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <LineChart className="w-5 h-5" /> Ventas
             </button>
@@ -1113,9 +1112,8 @@ export default function App() {
           {canView('usuarios') && (
             <button
               onClick={() => setCurrentView('usuarios')}
-              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${
-                currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
-              }`}
+              className={`w-full text-left px-4 py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
             >
               <Users className="w-5 h-5" /> Personal
             </button>
@@ -1134,9 +1132,8 @@ export default function App() {
             </button>
           </div>
 
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-black font-black text-[10px] uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${
-            isOnline ? 'bg-emerald-100 text-emerald-900 border-emerald-950' : 'bg-amber-100 text-amber-900 border-amber-950 animate-pulse'
-          }`}>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 border-black font-black text-[10px] uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${isOnline ? 'bg-emerald-100 text-emerald-900 border-emerald-950' : 'bg-amber-100 text-amber-900 border-amber-950 animate-pulse'
+            }`}>
             {isOnline ? (
               <>
                 <Wifi className="w-4 h-4 text-emerald-700 shrink-0" />
@@ -1150,9 +1147,9 @@ export default function App() {
             )}
           </div>
         </div>
-        
+
         <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-1">
-          Elaborado por<br/><span className="text-[#B91C1C]">Palma Nexus Solutions</span>
+          Elaborado por<br /><span className="text-[#B91C1C]">Palma Nexus Solutions</span>
         </div>
       </div>
 
@@ -1165,9 +1162,8 @@ export default function App() {
             <h1 className="text-xl font-black italic uppercase leading-none">Chifa Mei Hua</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[#FFD700] text-[10px] font-black uppercase tracking-widest">Sistema {currentUser.role}</span>
-              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border border-black uppercase flex items-center gap-1 ${
-                isOnline ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black animate-pulse'
-              }`}>
+              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border border-black uppercase flex items-center gap-1 ${isOnline ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black animate-pulse'
+                }`}>
                 {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
                 {isOnline ? 'En Línea' : 'Offline'}
               </span>
@@ -1183,11 +1179,11 @@ export default function App() {
           MAIN CONTENT AREA
           ========================================= */}
       <div className="flex-1 flex flex-col min-w-0 z-10 h-full pt-[76px] lg:pt-0 pb-0">
-        
+
         {/* POS Header Actions (Search) */}
         {currentView === 'pos' && (
           <div className="shrink-0 mb-4 flex flex-col sm:flex-row gap-3">
-             <div className="relative w-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl">
+            <div className="relative w-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 opacity-40 text-black" />
               </div>
@@ -1206,7 +1202,7 @@ export default function App() {
         <div className="flex-1 overflow-hidden flex flex-col gap-4">
           {currentView === 'pos' ? (
             <div className="flex flex-col h-full bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
-              
+
               {/* Horizontal Categories */}
               <div className="shrink-0 px-4 pt-4 pb-2 border-b-2 border-black/10 bg-slate-50 flex gap-2 overflow-x-auto scrollbar-hide">
                 {['Todos', ...CATEGORIES].map((category) => (
@@ -1216,11 +1212,10 @@ export default function App() {
                       setActiveCategory(category as Category | 'Todos');
                       setSearchQuery('');
                     }}
-                    className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${
-                      activeCategory === category && !searchQuery
-                        ? 'bg-[#B91C1C] text-white'
-                        : 'bg-white hover:bg-slate-100 text-slate-800'
-                    }`}
+                    className={`px-5 py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${activeCategory === category && !searchQuery
+                      ? 'bg-[#B91C1C] text-white'
+                      : 'bg-white hover:bg-slate-100 text-slate-800'
+                      }`}
                   >
                     {category === 'Especial' ? 'Platos Especiales' : category}
                   </button>
@@ -1234,46 +1229,46 @@ export default function App() {
                     const maxStock = getMaxAvailable(item);
                     const isOutOfStock = maxStock === 0;
                     const isLowStock = maxStock > 0 && maxStock <= 5;
-                    
+
                     return (
-                    <div
-                      key={item.id}
-                      onClick={() => !isOutOfStock && addToCart(item)}
-                      className={`p-4 rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[140px] relative ${
-                        isOutOfStock 
-                          ? 'bg-slate-200 opacity-60 cursor-not-allowed' 
+                      <div
+                        key={item.id}
+                        onClick={() => !isOutOfStock && addToCart(item)}
+                        className={`p-4 rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[140px] relative ${isOutOfStock
+                          ? 'bg-slate-200 opacity-60 cursor-not-allowed'
                           : 'bg-white hover:bg-[#FFD700] hover:translate-y-[-2px] hover:translate-x-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] cursor-pointer group'
-                      }`}
-                    >
-                      {isOutOfStock && (
-                        <div className="absolute top-2 right-2 bg-[#B91C1C] text-white text-[10px] font-black px-2 py-1 rounded border-2 border-black transform rotate-6 z-10 uppercase">
-                          Agotado
-                        </div>
-                      )}
-                      {!isOutOfStock && isLowStock && maxStock !== Infinity && (
-                        <div className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] font-black px-2 py-1 rounded border-2 border-black z-10 uppercase">
-                          Stock Bajo: {maxStock}
-                        </div>
-                      )}
-                      <div>
-                        <h3 className={`font-black text-sm lg:text-base leading-tight uppercase transition-colors line-clamp-2 ${!isOutOfStock && 'group-hover:text-black'}`}>
-                          {item.name}
-                        </h3>
-                        <span className="text-[10px] font-bold uppercase opacity-50 mt-1 block">{item.category === 'Especial' ? 'Platos Especiales' : item.category}</span>
-                      </div>
-                      <div className="flex justify-between items-end mt-4">
-                        <span className="text-xl font-black">
-                          {formatPrice(item.price)}
-                        </span>
-                        {!isOutOfStock && (
-                          <button className="w-8 h-8 bg-black text-white rounded-lg border-2 border-black flex items-center justify-center font-bold relative overflow-hidden group-hover:bg-[#B91C1C] transition-colors">
-                            <Plus className="w-5 h-5 absolute" />
-                          </button>
+                          }`}
+                      >
+                        {isOutOfStock && (
+                          <div className="absolute top-2 right-2 bg-[#B91C1C] text-white text-[10px] font-black px-2 py-1 rounded border-2 border-black transform rotate-6 z-10 uppercase">
+                            Agotado
+                          </div>
                         )}
+                        {!isOutOfStock && isLowStock && maxStock !== Infinity && (
+                          <div className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] font-black px-2 py-1 rounded border-2 border-black z-10 uppercase">
+                            Stock Bajo: {maxStock}
+                          </div>
+                        )}
+                        <div>
+                          <h3 className={`font-black text-sm lg:text-base leading-tight uppercase transition-colors line-clamp-2 ${!isOutOfStock && 'group-hover:text-black'}`}>
+                            {item.name}
+                          </h3>
+                          <span className="text-[10px] font-bold uppercase opacity-50 mt-1 block">{item.category === 'Especial' ? 'Platos Especiales' : item.category}</span>
+                        </div>
+                        <div className="flex justify-between items-end mt-4">
+                          <span className="text-xl font-black">
+                            {formatPrice(item.price)}
+                          </span>
+                          {!isOutOfStock && (
+                            <button className="w-8 h-8 bg-black text-white rounded-lg border-2 border-black flex items-center justify-center font-bold relative overflow-hidden group-hover:bg-[#B91C1C] transition-colors">
+                              <Plus className="w-5 h-5 absolute" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )})}
-                  
+                    )
+                  })}
+
                   {filteredItems.length === 0 && (
                     <div className="col-span-full py-16 flex flex-col items-center justify-center text-center opacity-40">
                       <Search className="w-12 h-12 mb-3" />
@@ -1284,15 +1279,15 @@ export default function App() {
               </div>
             </div>
           ) : currentView === 'mesas' ? (
-            <MesasView 
+            <MesasView
               activeTables={activeTables}
               onSelectTable={handleTableClick}
               onDeleteTable={handleDeleteTable}
               totalTables={30}
             />
           ) : currentView === 'materia_prima' ? (
-            <MateriaPrimaView 
-              rawMaterials={rawMaterials} 
+            <MateriaPrimaView
+              rawMaterials={rawMaterials}
               onAddMaterial={async (m) => await setDoc(doc(db, 'rawMaterials', m.id), m)}
               onDeleteMaterial={async (id) => {
                 const usedInDish = dishes.find(d => d.ingredients?.some(ing => ing.rawMaterialId === id));
@@ -1309,7 +1304,7 @@ export default function App() {
               }}
             />
           ) : currentView === 'ventas' ? (
-            <SalesView 
+            <SalesView
               orders={orders}
               currentUser={currentUser}
               onViewReceipt={(order) => setCompletedOrder(order)}
@@ -1341,7 +1336,7 @@ export default function App() {
               }}
             />
           ) : currentView === 'inv_comida' ? (
-            <DishInventoryView 
+            <DishInventoryView
               dishes={dishes}
               rawMaterials={rawMaterials}
               onAddDish={async (d) => await setDoc(doc(db, 'dishes', d.id), d)}
@@ -1360,7 +1355,7 @@ export default function App() {
               }}
             />
           ) : currentView === 'combos' ? (
-            <ComboInventoryView 
+            <ComboInventoryView
               combos={combos}
               dishes={dishes}
               drinks={drinks}
@@ -1369,8 +1364,8 @@ export default function App() {
               onDeleteCombo={async (id) => await deleteDoc(doc(db, 'combos', id))}
             />
           ) : (
-            <DrinkInventoryView 
-              drinks={drinks} 
+            <DrinkInventoryView
+              drinks={drinks}
               onAddDrink={async (d) => await setDoc(doc(db, 'drinks', d.id), d)}
               onDeleteDrink={async (id) => {
                 const usedInCombo = combos.find(c => c.items?.some((i: any) => i.type === 'drink' && i.itemId === id));
@@ -1393,345 +1388,373 @@ export default function App() {
       {/* RIGHT PANEL - CART */}
       {currentView === 'pos' && (
         <div className="w-[320px] xl:w-[380px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
-        
-        {/* Cart Header */}
-        <div className="bg-[#B91C1C] text-white p-4 flex flex-col gap-1.5 z-10 shrink-0 border-b-2 border-black">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2 text-base">
-              <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
-              Nota de Venta
-            </h2>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border border-white/30 shadow-sm bg-black/20 backdrop-blur-sm">
-              {syncState === 'synced' && (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span className="text-emerald-100">✓ En Nube</span>
-                </>
-              )}
-              {syncState === 'local_slow' && (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                  <span className="text-amber-200">⚡ Guardado Local (Red Lenta)</span>
-                </>
-              )}
-              {syncState === 'offline' && (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-red-400"></span>
-                  <span className="text-red-200">💾 Guardado Local (Offline)</span>
-                </>
-              )}
-              {syncState === 'syncing' && (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-blue-300 animate-spin"></span>
-                  <span className="text-blue-100">⏳ Guardando...</span>
-                </>
-              )}
+
+          {/* Cart Header */}
+          <div className="bg-[#B91C1C] text-white p-4 flex flex-col gap-1.5 z-10 shrink-0 border-b-2 border-black">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2 text-base">
+                <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
+                Nota de Venta
+              </h2>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border border-white/30 shadow-sm bg-black/20 backdrop-blur-sm">
+                {syncState === 'synced' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span className="text-emerald-100">✓ En Nube</span>
+                  </>
+                )}
+                {syncState === 'local_slow' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    <span className="text-amber-200">⚡ Guardado Local (Red Lenta)</span>
+                  </>
+                )}
+                {syncState === 'offline' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-red-400"></span>
+                    <span className="text-red-200">💾 Guardado Local (Offline)</span>
+                  </>
+                )}
+                {syncState === 'syncing' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-blue-300 animate-spin"></span>
+                    <span className="text-blue-100">⏳ Guardando...</span>
+                  </>
+                )}
+              </div>
             </div>
+            <span className="text-[10px] uppercase font-bold opacity-80">
+              {activeTableId ? `Mesa ${activeTableId} (Guardado Automático)` : 'Nuevo Pedido'}
+            </span>
           </div>
-          <span className="text-[10px] uppercase font-bold opacity-80">
-            {activeTableId ? `Mesa ${activeTableId} (Guardado Automático)` : 'Nuevo Pedido'}
-          </span>
-        </div>
-          
-        <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
-          {/* Selector Rápido de Tipo de Comanda */}
-          <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
-            <button
-              type="button"
-              disabled={Boolean(activeTableId)}
-              onClick={() => {
-                if (!activeTableId && isNonTableType(tableNumber)) {
-                  setTableNumber('');
-                }
-              }}
-              className={`flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
-                !isNonTableType(tableNumber)
+
+          <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
+            {/* Selector Rápido de Tipo de Comanda */}
+            <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId && isNonTableType(tableNumber)) {
+                    setTableNumber('');
+                  }
+                }}
+                className={`flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${!isNonTableType(tableNumber)
                   ? 'bg-[#1A1A1A] text-[#FFD700] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
-              }`}
-            >
-              <UtensilsCrossed className="w-3 h-3" /> Mesa
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(activeTableId)}
-              onClick={() => {
-                if (!activeTableId) setTableNumber('Domicilio');
-              }}
-              className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
-                (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar')
+                  }`}
+              >
+                <UtensilsCrossed className="w-3 h-3" /> Mesa
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) setTableNumber('Domicilio');
+                }}
+                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar')
                   ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
-              }`}
-            >
-              <ShoppingBag className="w-3 h-3" /> Domicilio
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(activeTableId)}
-              onClick={() => {
-                if (!activeTableId) setTableNumber('PedidosYa');
-              }}
-              className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
-                (tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
+                  }`}
+              >
+                <ShoppingBag className="w-3 h-3" /> Domicilio
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) setTableNumber('PedidosYa');
+                }}
+                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
                   ? 'bg-[#B91C1C] text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] animate-pulse'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
-              }`}
-            >
-              <Bike className="w-3 h-3" /> PedidosYa
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(activeTableId)}
-              onClick={() => {
-                if (!activeTableId) setTableNumber('Rappi');
-              }}
-              className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
-                tableNumber.trim().toLowerCase() === 'rappi'
+                  }`}
+              >
+                <Bike className="w-3 h-3" /> PedidosYa
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) setTableNumber('Rappi');
+                }}
+                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${tableNumber.trim().toLowerCase() === 'rappi'
                   ? 'bg-orange-600 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
-              }`}
-            >
-              🧡 Rappi
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(activeTableId)}
-              onClick={() => {
-                if (!activeTableId) setTableNumber('Uber Eats');
-              }}
-              className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${
-                (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
+                  }`}
+              >
+                🧡 Rappi
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) setTableNumber('Uber Eats');
+                }}
+                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
                   ? 'bg-emerald-950 text-emerald-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
-              }`}
-            >
-              🟢 Uber
-            </button>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              {(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya') ? (
-                <Bike className="h-4 w-4 text-[#B91C1C]" />
-              ) : tableNumber.trim().toLowerCase() === 'rappi' ? (
-                <span className="text-xs">🧡</span>
-              ) : (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats') ? (
-                <span className="text-xs">🟢</span>
-              ) : (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') ? (
-                <ShoppingBag className="h-4 w-4 text-emerald-700" />
-              ) : (
-                <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />
-              )}
+                  }`}
+              >
+                🟢 Uber
+              </button>
             </div>
-            <input
-              type="text"
-              placeholder="Mesa, Domicilio, PedidosYa, Rappi, Uber"
-              className={`w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ${
-                isDeliveryApp(tableNumber) ? 'bg-red-50 text-red-900 border-red-800' : ''
-              }`}
-              value={tableNumber}
-              onChange={(e) => setTableNumber(e.target.value)}
-              disabled={Boolean(activeTableId)}
-            />
-          </div>
 
-          {/* Campo de Nombre del Cliente / Dirección (SOLO PARA DOMICILIO) */}
-          {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') && (
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-4 w-4 text-emerald-700" />
+                {(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya') ? (
+                  <Bike className="h-4 w-4 text-[#B91C1C]" />
+                ) : tableNumber.trim().toLowerCase() === 'rappi' ? (
+                  <span className="text-xs">🧡</span>
+                ) : (tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats') ? (
+                  <span className="text-xs">🟢</span>
+                ) : (tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') ? (
+                  <ShoppingBag className="h-4 w-4 text-emerald-700" />
+                ) : (
+                  <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />
+                )}
               </div>
               <input
                 type="text"
-                placeholder="Cliente / Dirección (Ej: Juan Pérez - Av 9 Oct)"
-                className="w-full pl-9 pr-3 py-2 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ring-2 ring-emerald-300"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Mesa, Domicilio, PedidosYa, Rappi, Uber"
+                className={`w-full pl-9 pr-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ${isDeliveryApp(tableNumber) ? 'bg-red-50 text-red-900 border-red-800' : ''
+                  }`}
+                value={tableNumber}
+                onChange={(e) => setTableNumber(e.target.value)}
+                disabled={Boolean(activeTableId)}
               />
             </div>
-          )}
 
-          {/* Observaciones - Visible para TODOS los tipos */}
-          <div className="relative">
-            <textarea
-              placeholder="📝 Observaciones (Ej: Sin picante, poco sal, extra salsa...)"
-              rows={2}
-              className="w-full px-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none placeholder:normal-case placeholder:font-medium placeholder:text-slate-400 resize-none"
-              value={orderNotes}
-              onChange={(e) => setOrderNotes(e.target.value)}
-            />
-          </div>
-        </div>
+            {/* Campo de Nombre del Cliente / Dirección (SOLO PARA DOMICILIO) */}
+            {(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar') && (
+              <div className="flex flex-col gap-2">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-4 w-4 text-emerald-700" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Cliente / Dirección (Ej: Juan Pérez - Av 9 Oct)"
+                    className="w-full pl-9 pr-3 py-2 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 rounded-xl text-sm font-bold focus:outline-none uppercase placeholder:normal-case placeholder:font-medium ring-2 ring-emerald-300"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </div>
+                {/* Botones rápidos de tarifa de domicilio */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const feeId = 'delivery-fee';
+                      const feeItem: MenuItem = { id: feeId, name: 'DOMICILIO', category: 'Bebidas', price: 3, cost: 0 };
+                      setCart(prev => {
+                        const existing = prev.find(i => i.menuItem.id === feeId);
+                        if (existing) return prev.map(i => i.menuItem.id === feeId ? { ...i, menuItem: feeItem, quantity: 1 } : i);
+                        return [...prev, { id: feeId, menuItem: feeItem, quantity: 1 }];
+                      });
+                    }}
+                    className="flex-1 py-2 rounded-xl border-2 border-emerald-700 bg-emerald-100 text-emerald-900 font-black text-sm uppercase hover:bg-emerald-200 transition-colors"
+                  >
+                    🛵 Domicilio $3
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const feeId = 'delivery-fee';
+                      const feeItem: MenuItem = { id: feeId, name: 'DOMICILIO', category: 'Bebidas', price: 4, cost: 0 };
+                      setCart(prev => {
+                        const existing = prev.find(i => i.menuItem.id === feeId);
+                        if (existing) return prev.map(i => i.menuItem.id === feeId ? { ...i, menuItem: feeItem, quantity: 1 } : i);
+                        return [...prev, { id: feeId, menuItem: feeItem, quantity: 1 }];
+                      });
+                    }}
+                    className="flex-1 py-2 rounded-xl border-2 border-emerald-700 bg-emerald-100 text-emerald-900 font-black text-sm uppercase hover:bg-emerald-200 transition-colors"
+                  >
+                    🛵 Domicilio $4
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto w-full p-4 scrollbar-hide">
-          {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 opacity-30">
-              <ShoppingBag className="w-12 h-12 stroke-2" />
-              <p className="text-sm font-bold uppercase text-center">Seleccione platillos<br/>del menú</p>
+            {/* Observaciones - Visible para TODOS los tipos */}
+            <div className="relative">
+              <textarea
+                placeholder="📝 Observaciones (Ej: Sin picante, poco sal, extra salsa...)"
+                rows={2}
+                className="w-full px-3 py-2 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none placeholder:normal-case placeholder:font-medium placeholder:text-slate-400 resize-none"
+                value={orderNotes}
+                onChange={(e) => setOrderNotes(e.target.value)}
+              />
             </div>
-          ) : (
-            <div className="space-y-4">
-              {cart.map((item) => (
-                <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      disabled={Boolean(activeTableId) && currentUser?.role !== 'Administrador'}
-                      className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
-                      value={item.quantity}
-                      onChange={(e) => updateQuantityExact(item.id, e.target.value)}
-                      onBlur={() => handleBlurQuantity(item.id)}
-                    />
-                    <div className="flex flex-col">
-                      <span className="font-bold text-sm uppercase leading-tight">{item.menuItem.name}</span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
-                        <div className="flex items-center gap-1 opacity-80 hover:opacity-100 transition-opacity">
-                          {(currentUser?.role === 'Administrador' || !activeTableId) && (
-                            <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Reducir o eliminar">
-                              {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-[#B91C1C]" /> : <Minus className="w-3 h-3" />}
+          </div>
+
+          {/* Cart Items */}
+          <div className="flex-1 overflow-y-auto w-full p-4 scrollbar-hide">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 opacity-30">
+                <ShoppingBag className="w-12 h-12 stroke-2" />
+                <p className="text-sm font-bold uppercase text-center">Seleccione platillos<br />del menú</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {cart.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        disabled={Boolean(activeTableId) && currentUser?.role !== 'Administrador'}
+                        className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
+                        value={item.quantity}
+                        onChange={(e) => updateQuantityExact(item.id, e.target.value)}
+                        onBlur={() => handleBlurQuantity(item.id)}
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-bold text-sm uppercase leading-tight">{item.menuItem.name}</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] opacity-50 font-bold uppercase">{formatPrice(item.menuItem.price)} c/u</span>
+                          <div className="flex items-center gap-1 opacity-80 hover:opacity-100 transition-opacity">
+                            {(currentUser?.role === 'Administrador' || !activeTableId) && (
+                              <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Reducir o eliminar">
+                                {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-[#B91C1C]" /> : <Minus className="w-3 h-3" />}
+                              </button>
+                            )}
+                            <button onClick={() => updateQuantity(item.id, 1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Aumentar">
+                              <Plus className="w-3 h-3" />
                             </button>
-                          )}
-                          <button onClick={() => updateQuantity(item.id, 1)} className="bg-slate-200 border border-black rounded w-5 h-5 flex items-center justify-center text-black hover:bg-slate-300 active:translate-y-[1px]" title="Aumentar">
-                            <Plus className="w-3 h-3" />
-                          </button>
+                          </div>
                         </div>
                       </div>
                     </div>
+                    <span className="font-bold text-sm shrink-0 pl-2">
+                      {formatPrice(item.menuItem.price * item.quantity)}
+                    </span>
                   </div>
-                  <span className="font-bold text-sm shrink-0 pl-2">
-                    {formatPrice(item.menuItem.price * item.quantity)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* Checkout Section */}
-        <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
-          <div className="flex justify-between items-center mb-2">
-             <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
+          {/* Checkout Section */}
+          <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
+            <div className="flex justify-between items-center mb-2">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
                 <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
                 Feriado (IVA 8%)
-             </label>
-          </div>
-          <div className="flex justify-between mb-1 text-sm">
-            <span className="opacity-60 font-bold uppercase">Subtotal</span>
-            <span className="font-bold">{formatPrice(cartTotal / (isHolidayIva ? 1.08 : 1.15))}</span>
-          </div>
-          <div className="flex justify-between mb-3 text-sm">
-            <span className="opacity-60 font-bold uppercase">IVA ({isHolidayIva ? '8%' : '15%'})</span>
-            <span className="font-bold">{formatPrice(cartTotal - (cartTotal / (isHolidayIva ? 1.08 : 1.15)))}</span>
-          </div>
-          <div className="flex justify-between items-end mb-4">
-            <span className="text-xs font-black uppercase tracking-widest">Total a Pagar</span>
-            <span className="text-3xl font-black">{formatPrice(cartTotal)}</span>
-          </div>
-          
-          <div className="flex justify-between items-center mb-2 gap-2">
-            <span className="text-xs font-bold uppercase opacity-80">Efectivo</span>
-            <input 
-              type="number" 
-              placeholder="0.00" 
-              className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]" 
-              value={cashReceived}
-              onChange={(e) => setCashReceived(e.target.value)}
-            />
-          </div>
-          
-          {parseFloat(cashReceived) > 0 && (
-            <div className="flex justify-between items-end mb-6">
-              <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
-              <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
+              </label>
             </div>
-          )}
-          
-          <div className="flex gap-2">
-            {(currentUser?.role === 'Administrador' || !activeTableId) && (
+            <div className="flex justify-between mb-1 text-sm">
+              <span className="opacity-60 font-bold uppercase">Subtotal</span>
+              <span className="font-bold">{formatPrice(cartTotal / (isHolidayIva ? 1.08 : 1.15))}</span>
+            </div>
+            <div className="flex justify-between mb-3 text-sm">
+              <span className="opacity-60 font-bold uppercase">IVA ({isHolidayIva ? '8%' : '15%'})</span>
+              <span className="font-bold">{formatPrice(cartTotal - (cartTotal / (isHolidayIva ? 1.08 : 1.15)))}</span>
+            </div>
+            <div className="flex justify-between items-end mb-4">
+              <span className="text-xs font-black uppercase tracking-widest">Total a Pagar</span>
+              <span className="text-3xl font-black">{formatPrice(cartTotal)}</span>
+            </div>
+
+            <div className="flex justify-between items-center mb-2 gap-2">
+              <span className="text-xs font-bold uppercase opacity-80">Efectivo</span>
+              <input
+                type="number"
+                placeholder="0.00"
+                className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]"
+                value={cashReceived}
+                onChange={(e) => setCashReceived(e.target.value)}
+              />
+            </div>
+
+            {parseFloat(cashReceived) > 0 && (
+              <div className="flex justify-between items-end mb-6">
+                <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
+                <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              {(currentUser?.role === 'Administrador' || !activeTableId) && (
+                <button
+                  onClick={clearCart}
+                  disabled={cart.length === 0 || isCheckingOut}
+                  className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                  title="Limpiar Orden"
+                >
+                  <Trash2 className="w-5 h-5 text-[#B91C1C]" />
+                </button>
+              )}
               <button
-                onClick={clearCart}
+                onClick={handlePrintPreview}
                 disabled={cart.length === 0 || isCheckingOut}
                 className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-                title="Limpiar Orden"
+                title="Imprimir Pre-cuenta o Comanda"
               >
-                <Trash2 className="w-5 h-5 text-[#B91C1C]" />
+                <Printer className="w-5 h-5 text-black" />
               </button>
-            )}
-            <button
-              onClick={handlePrintPreview}
-              disabled={cart.length === 0 || isCheckingOut}
-              className="py-4 px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-              title="Imprimir Pre-cuenta o Comanda"
-            >
-              <Printer className="w-5 h-5 text-black" />
-            </button>
-            {activeTableId ? (
-              <div className="flex flex-col gap-2 flex-1">
-                <button
-                  onClick={handleSaveTable}
-                  disabled={isCheckingOut}
-                  className="w-full py-2 px-2 bg-emerald-50 border-2 border-black text-emerald-800 rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-emerald-100 active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1"
-                >
-                  ✓ Guardado Automático (Ir a Mesas)
-                </button>
-                <button
-                  onClick={handleCheckout}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="w-full py-2 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-[0.1em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                >
-                  {isCheckingOut ? '...' : 'Cobrar y Liberar'}
-                </button>
-                <button
-                  onClick={handleFreeTableWithoutCheckout}
-                  disabled={isCheckingOut}
-                  className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
-                >
-                  {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2 flex-1">
-                {isDeliveryApp(tableNumber) && (
-                  <div className="w-full py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
-                    <Bike className="w-4 h-4 text-[#B91C1C] animate-bounce" />
-                    <span>{tableNumber} exige <strong>Cobrar Directo</strong></span>
-                  </div>
-                )}
-                <div className="flex gap-2 flex-1">
+              {activeTableId ? (
+                <div className="flex flex-col gap-2 flex-1">
                   <button
-                    onClick={() => handleSaveTable()}
-                    disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
-                    className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
-                    title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
+                    onClick={handleSaveTable}
+                    disabled={isCheckingOut}
+                    className="w-full py-2 px-2 bg-emerald-50 border-2 border-black text-emerald-800 rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-emerald-100 active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1"
                   >
-                    Guardar en Mesa
+                    ✓ Guardado Automático (Ir a Mesas)
                   </button>
                   <button
                     onClick={handleCheckout}
                     disabled={cart.length === 0 || isCheckingOut}
-                    className={`flex-1 py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${
-                      isDeliveryApp(tableNumber)
-                        ? 'bg-[#B91C1C] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-800'
-                        : 'bg-black text-[#FFD700] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]'
-                    }`}
+                    className="w-full py-2 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-[0.1em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                   >
-                    {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
+                    {isCheckingOut ? '...' : 'Cobrar y Liberar'}
+                  </button>
+                  <button
+                    onClick={handleFreeTableWithoutCheckout}
+                    disabled={isCheckingOut}
+                    className="w-full py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
+                  >
+                    {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
                   </button>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="flex flex-col gap-2 flex-1">
+                  {isDeliveryApp(tableNumber) && (
+                    <div className="w-full py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
+                      <Bike className="w-4 h-4 text-[#B91C1C] animate-bounce" />
+                      <span>{tableNumber} exige <strong>Cobrar Directo</strong></span>
+                    </div>
+                  )}
+                  <div className="flex gap-2 flex-1">
+                    <button
+                      onClick={() => handleSaveTable()}
+                      disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
+                      className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                      title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
+                    >
+                      Guardar en Mesa
+                    </button>
+                    <button
+                      onClick={handleCheckout}
+                      disabled={cart.length === 0 || isCheckingOut}
+                      className={`flex-1 py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${isDeliveryApp(tableNumber)
+                        ? 'bg-[#B91C1C] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-800'
+                        : 'bg-black text-[#FFD700] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]'
+                        }`}
+                    >
+                      {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Floating Cart Button for Mobile */}
       {currentView === 'pos' && cart.length > 0 && !isMobileCartOpen && (
-        <button 
+        <button
           className="lg:hidden fixed bottom-[90px] right-6 w-16 h-16 bg-[#B91C1C] text-white rounded-full border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center z-40 active:translate-y-[2px] active:shadow-none transition-all"
           onClick={() => setIsMobileCartOpen(true)}
         >
@@ -1785,7 +1808,7 @@ export default function App() {
               <X className="w-6 h-6" />
             </button>
           </div>
-          
+
           <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1851,10 +1874,10 @@ export default function App() {
           {/* Checkout Section Mobile */}
           <div className="p-4 bg-slate-50 border-t-2 border-black shrink-0">
             <div className="flex justify-between items-center mb-3">
-               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
-                  <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
-                  Feriado (IVA 8%)
-               </label>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
+                <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
+                Feriado (IVA 8%)
+              </label>
             </div>
             <div className="flex justify-between items-end mb-4">
               <div className="flex flex-col">
@@ -1862,43 +1885,43 @@ export default function App() {
                 <span className="text-2xl font-black">{formatPrice(cartTotal)}</span>
               </div>
             </div>
-            
+
             <div className="flex justify-between items-center mb-2 gap-2">
               <span className="text-xs font-bold uppercase opacity-80">Efectivo</span>
-              <input 
-                type="number" 
-                placeholder="0.00" 
-                className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]" 
+              <input
+                type="number"
+                placeholder="0.00"
+                className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]"
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
               />
             </div>
-            
+
             {parseFloat(cashReceived) > 0 && (
               <div className="flex justify-between items-end mb-4">
                 <span className="text-xs font-black uppercase tracking-widest text-[#B91C1C]">Vuelto</span>
                 <span className="text-xl font-black text-[#B91C1C]">{formatPrice(Math.max(0, parseFloat(cashReceived) - cartTotal))}</span>
               </div>
             )}
-              <div className="flex gap-2">
-                {currentUser?.role === 'Administrador' && (
-                  <button
-                    onClick={clearCart}
-                    disabled={cart.length === 0 || isCheckingOut}
-                    className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
-                  >
-                    <Trash2 className="w-5 h-5 text-[#B91C1C]" />
-                  </button>
-                )}
+            <div className="flex gap-2">
+              {currentUser?.role === 'Administrador' && (
                 <button
-                  onClick={handlePrintPreview}
+                  onClick={clearCart}
                   disabled={cart.length === 0 || isCheckingOut}
                   className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
                 >
-                  <Printer className="w-5 h-5 text-black" />
+                  <Trash2 className="w-5 h-5 text-[#B91C1C]" />
                 </button>
-              </div>
-            
+              )}
+              <button
+                onClick={handlePrintPreview}
+                disabled={cart.length === 0 || isCheckingOut}
+                className="p-3 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none"
+              >
+                <Printer className="w-5 h-5 text-black" />
+              </button>
+            </div>
+
             {activeTableId ? (
               <>
                 <div className="flex gap-2">
@@ -1952,46 +1975,46 @@ export default function App() {
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-black flex justify-around items-center h-[72px] px-1 z-50 shadow-[0px_-4px_0px_0px_rgba(0,0,0,0.1)] overflow-x-auto">
         {canView('mesas') && (
-           <button onClick={() => setCurrentView('mesas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'mesas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <LayoutGrid className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Mesas</span>
-           </button>
+          <button onClick={() => setCurrentView('mesas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'mesas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <LayoutGrid className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Mesas</span>
+          </button>
         )}
         {canView('pos') && (
-           <button onClick={() => setCurrentView('pos')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'pos' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <Store className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Venta</span>
-           </button>
+          <button onClick={() => setCurrentView('pos')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'pos' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <Store className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Venta</span>
+          </button>
         )}
         {canView('materia_prima') && (
-           <button onClick={() => setCurrentView('materia_prima')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'materia_prima' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <Package className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Insumos</span>
-           </button>
+          <button onClick={() => setCurrentView('materia_prima')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'materia_prima' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <Package className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Insumos</span>
+          </button>
         )}
         {canView('inv_comida') && (
-           <button onClick={() => setCurrentView('inv_comida')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_comida' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <ChefHat className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Comidas</span>
-           </button>
+          <button onClick={() => setCurrentView('inv_comida')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_comida' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <ChefHat className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Comidas</span>
+          </button>
         )}
         {canView('inv_bebidas') && (
-           <button onClick={() => setCurrentView('inv_bebidas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_bebidas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <Wine className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Bebida</span>
-           </button>
+          <button onClick={() => setCurrentView('inv_bebidas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'inv_bebidas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <Wine className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Bebida</span>
+          </button>
         )}
         {canView('ventas') && (
-           <button onClick={() => setCurrentView('ventas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'ventas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <LineChart className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Ventas</span>
-           </button>
+          <button onClick={() => setCurrentView('ventas')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'ventas' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <LineChart className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Ventas</span>
+          </button>
         )}
         {canView('usuarios') && (
-           <button onClick={() => setCurrentView('usuarios')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'usuarios' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
-             <Users className="w-5 h-5"/>
-             <span className="text-[9px] font-black uppercase tracking-wider">Cajeros</span>
-           </button>
+          <button onClick={() => setCurrentView('usuarios')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'usuarios' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Cajeros</span>
+          </button>
         )}
       </nav>
 
@@ -1999,7 +2022,7 @@ export default function App() {
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-[#F7F4F0] rounded-3xl w-full max-w-sm overflow-hidden border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col relative animate-fade-in-up">
-            <button 
+            <button
               onClick={() => setShowLogoutConfirm(false)}
               className="absolute top-4 right-4 p-2 bg-white rounded-full border-2 border-black hover:bg-slate-100 transition-colors z-10"
             >
@@ -2012,13 +2035,13 @@ export default function App() {
             <div className="p-6">
               <p className="text-lg font-bold mb-8">¿Estás seguro de cerrar sesión?</p>
               <div className="flex gap-4">
-                <button 
+                <button
                   onClick={() => setShowLogoutConfirm(false)}
                   className="flex-1 px-4 py-3 bg-white border-2 border-black rounded-xl font-bold hover:bg-slate-50 transition-colors text-black"
                 >
                   Cancelar
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowLogoutConfirm(false);
                     setCurrentUser(null);
@@ -2039,9 +2062,9 @@ export default function App() {
 
       {/* Receipt Modal (Nota de Venta) */}
       {completedOrder && (
-        <ReceiptModal 
-          order={completedOrder} 
-          onClose={handleCloseReceipt} 
+        <ReceiptModal
+          order={completedOrder}
+          onClose={handleCloseReceipt}
           onConfirmCheckout={completedOrder.id.startsWith('preview') ? handleCheckout : undefined}
           onKitchenPrint={async () => {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
