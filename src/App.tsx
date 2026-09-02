@@ -48,6 +48,13 @@ export default function App() {
   const [timeRange, setTimeRange] = useState<'all' | 'day' | 'week' | 'year' | 'custom'>('day');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [orderCounter, setOrderCounter] = useState<number>(0);
+
+  // Asegurar zoom normal de 100% por defecto
+  useEffect(() => {
+    localStorage.removeItem('chifa_ui_zoom');
+    const root = document.getElementById('root');
+    if (root) root.style.zoom = '1';
+  }, []);
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
 

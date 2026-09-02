@@ -91,6 +91,18 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('C.I: ...........................'));
           writeData(textToBuffer('Correo: ........................'));
           writeData(textToBuffer('Telf: ..........................'));
+          writeData(textToBuffer('Dir: ...........................'));
+          writeData(textToBuffer('F.Nacimiento: ..................'));
+          writeData(textToBuffer('--------------------------------'));
+          
+          writeData(textToBuffer('\n'));
+          writeData(ALIGN_CENTER);
+          writeData(BOLD_ON);
+          writeData(textToBuffer('PROPINA: $ __________________'));
+          writeData(BOLD_OFF);
+          writeData(textToBuffer('\n'));
+          
+          writeData(ALIGN_LEFT);
           writeData(textToBuffer('--------------------------------'));
           
           order.items.forEach(item => {
@@ -181,17 +193,37 @@ function printTicket(jobId, order, ticketType) {
            fs.writeFileSync(tempFile, finalBuffer);
            
            const computerName = process.env.COMPUTERNAME || '127.0.0.1';
-           const command = `copy /b "${tempFile}" "\\\\${computerName}\\${PRINTER_SHARED_NAME_CAJA}"`;
-           console.log(`[+] Enviando ticket por USB compartido: ${command}`);
            
-           exec(command, (error) => {
-              try { fs.unlinkSync(tempFile); } catch(e){}
-              if (error) {
-                 reject(new Error(`Error enviando a USB: ¿Compartiste la impresora con el nombre '${PRINTER_SHARED_NAME_CAJA}'?`));
-              } else {
+           const targets = [
+             `\\\\127.0.0.1\\${PRINTER_SHARED_NAME_CAJA}`,
+             `\\\\localhost\\${PRINTER_SHARED_NAME_CAJA}`,
+             `\\\\${computerName}\\${PRINTER_SHARED_NAME_CAJA}`
+           ];
+
+           const tryPrint = (index) => {
+             if (index >= targets.length) {
+               try { fs.unlinkSync(tempFile); } catch(e){}
+               reject(new Error(`Error enviando a USB. Por favor confirma en Windows -> Propiedades de la impresora -> pestaña Compartir -> Marcar 'Compartir esta impresora' y colocar nombre '${PRINTER_SHARED_NAME_CAJA}'.`));
+               return;
+             }
+
+             const target = targets[index];
+             const command = `copy /b "${tempFile}" "${target}"`;
+             console.log(`[+] Intentando imprimir por USB (${index + 1}/${targets.length}): ${command}`);
+
+             exec(command, (error) => {
+               if (error) {
+                 console.log(`[-] Fallo en ${target}, probando siguiente alternativa...`);
+                 tryPrint(index + 1);
+               } else {
+                 try { fs.unlinkSync(tempFile); } catch(e){}
+                 console.log(`[OK] Ticket enviado con exito a ${target}`);
                  resolve();
-              }
-           });
+               }
+             });
+           };
+
+           tryPrint(0);
            
         } else {
            // IMPRESIÓN POR IP RED (COCINA SUCURSAL 2: 192.168.10.17)
@@ -242,10 +274,11 @@ onSnapshot(q, (snapshot) => {
     if (change.type === "added") {
       const job = change.doc.data();
       const jobId = change.doc.id;
-      const jobBranch = job.order?.branchId || '1';
+      const jobBranch = job.branchId || job.order?.branchId || '1';
 
       // Filtrar e ignorar impresiones que pertenezcan a la otra sucursal
       if (jobBranch !== TARGET_BRANCH_ID) {
+        console.log(`[-] Ignorando trabajo ${jobId} porque pertenece a Sucursal ${jobBranch} (Este servidor es Sucursal ${TARGET_BRANCH_ID}).`);
         return;
       }
       

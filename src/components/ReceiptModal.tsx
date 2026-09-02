@@ -37,6 +37,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
       await addDoc(collection(db, 'print_jobs'), {
         order: orderToPrint,
         ticketType: type,
+        branchId: orderToPrint.branchId || '1',
         status: 'pending',
         createdAt: new Date().toISOString()
       });
@@ -287,10 +288,6 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                   </div>
                   <div className="flex justify-between w-full items-end mt-1 text-[10px]">
                     <span>DIR:</span>
-                    <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
-                  </div>
-                  <div className="flex justify-between w-full items-end mt-1 text-[10px]">
-                    <span>F.NACIMIENTO:</span>
                     <span className="flex-1 border-b border-black ml-2 mb-[2px]"></span>
                   </div>
                 </div>
