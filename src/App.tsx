@@ -53,7 +53,7 @@ export default function App() {
   useEffect(() => {
     localStorage.removeItem('chifa_ui_zoom');
     const root = document.getElementById('root');
-    if (root) root.style.zoom = '1';
+    if (root) root.style.zoom = '';
   }, []);
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
