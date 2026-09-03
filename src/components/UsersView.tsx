@@ -33,7 +33,7 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
     }
 
     const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+    const currentBranchName = (currentBranchId === '2' || currentUser?.branchName === 'Sucursal 2' || currentUser?.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia';
 
     onAddUser({
       id: editingId || Date.now().toString(),
@@ -55,7 +55,7 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
   };
 
   const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-  const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+  const currentBranchName = (currentBranchId === '2' || currentUser?.branchName === 'Sucursal 2' || currentUser?.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia';
 
   const branchUsers = React.useMemo(() => {
     return users.filter(user => {
@@ -190,12 +190,12 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
                         {user.role}
                       </span>
                       <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded border border-black bg-slate-900 text-white">
-                        📍 {user.branchName || 'Matriz'}
+                        📍 {(user.branchId === '2' || user.branchName === 'Sucursal 2' || user.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
                       </span>
                     </div>
                    
                    <div className="flex gap-2">
-                     {user.id !== '1' && (
+                     {user.id !== '1' && user.id !== '2' && user.cedula !== '0923809529001' && user.cedula !== '1714851332001' && (
                        <button
                          onClick={() => handleEdit(user)}
                          className="bg-slate-100 hover:bg-slate-200 p-2 rounded-lg border-2 border-black text-black active:translate-y-[1px] transition-all"
@@ -204,7 +204,7 @@ export function UsersView({ users, currentUser, onAddUser, onDeleteUser }: Users
                          <Edit2 className="w-4 h-4" />
                        </button>
                      )}
-                     {user.id !== '1' && users.length > 1 && (
+                     {user.id !== '1' && user.id !== '2' && user.cedula !== '0923809529001' && user.cedula !== '1714851332001' && users.length > 1 && (
                        <button
                          onClick={() => handleDelete(user.id, user.name)}
                          className="bg-red-100 hover:bg-red-200 p-2 rounded-lg border-2 border-black text-black active:translate-y-[1px] transition-all"

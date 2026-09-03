@@ -1166,7 +1166,7 @@ export default function App() {
             <span className="text-[10px] 2xl:text-xs font-bold uppercase tracking-widest opacity-80 mb-0.5">Restaurante</span>
             <h1 className="text-2xl 2xl:text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
             <span className="text-[#FFD700] font-black uppercase tracking-widest text-[11px] 2xl:text-xs mt-1">
-              📍 {currentUser?.branchName || (currentUser?.cedula === '1714851332001' ? 'Sucursal 2' : 'Matriz')}
+              📍 {(currentBranchId === '2' || currentUser?.branchName === 'Sucursal 2' || currentUser?.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
             </span>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
@@ -1443,6 +1443,7 @@ export default function App() {
           ) : currentView === 'ventas' ? (
             <SalesView
               orders={orders}
+              users={users}
               currentUser={currentUser}
               onViewReceipt={(order) => setCompletedOrder(order)}
               onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}

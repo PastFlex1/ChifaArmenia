@@ -7,6 +7,7 @@ import Swal from 'sweetalert2';
 
 interface SalesViewProps {
   orders: Order[];
+  users?: UserAccount[];
   currentUser: UserAccount | null;
   onViewReceipt: (order: Order) => void;
   onDeleteOrder?: (id: string) => void;
@@ -17,9 +18,11 @@ interface SalesViewProps {
   setCustomDateRange: (range: { start: string; end: string }) => void;
 }
 
-export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
-  const defaultBranch = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-  const [selectedBranch, setSelectedBranch] = useState<string>(defaultBranch);
+export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
+  const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+  const branchDisplayName = currentBranchId === '2' ? 'San Rafael' : 'Armenia';
+  const selectedBranch = currentBranchId;
+
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
   const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
@@ -72,26 +75,60 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     }
   };
 
-  const sellers = useMemo(() => {
-    const list = new Map<string, string>();
-    orders.forEach(o => {
-      if (selectedBranch !== 'all' && (o.branchId || '1') !== selectedBranch) return;
-      if (o.sellerId && o.sellerName) {
-         list.set(o.sellerId, o.sellerName);
+  // Obtener los trabajadores de esta sucursal (Armenia o San Rafael)
+  const branchWorkers = useMemo(() => {
+    return (users || []).filter(user => {
+      if (currentBranchId === '2') {
+        return user.id === '2' || user.cedula === '1714851332001' || user.branchId === '2';
+      } else {
+        if (user.id === '2' || user.cedula === '1714851332001' || user.branchId === '2') return false;
+        return user.id === '1' || (user.branchId || '1') === '1';
       }
     });
+  }, [users, currentBranchId]);
+
+  const sellers = useMemo(() => {
+    const list = new Map<string, string>();
+
+    // 1. Agregar los trabajadores creados para esta sucursal
+    branchWorkers.forEach(w => {
+      if (w.name) {
+        list.set(w.id, w.name.trim());
+      }
+    });
+
+    // 2. Incluir vendedores que figuren en órdenes de esta sucursal
+    orders.forEach(o => {
+      if ((o.branchId || '1') !== currentBranchId) return;
+      if (o.sellerId && o.sellerName) {
+        const otherUser = (users || []).find(u => u.id === o.sellerId || u.name?.trim().toLowerCase() === o.sellerName?.trim().toLowerCase());
+        if (otherUser) {
+          const uBranch = otherUser.branchId || (otherUser.id === '2' || otherUser.cedula === '1714851332001' ? '2' : '1');
+          if (uBranch !== currentBranchId) return;
+        }
+        if (!list.has(o.sellerId)) {
+          list.set(o.sellerId, o.sellerName.trim());
+        }
+      }
+    });
+
     return Array.from(list.entries()).map(([id, name]) => ({ id, name }));
-  }, [orders, selectedBranch]);
+  }, [branchWorkers, orders, currentBranchId, users]);
 
   const filteredOrders = useMemo(() => {
     let filtered = orders;
     
-    if (selectedBranch !== 'all') {
-      filtered = filtered.filter(o => (o.branchId || '1') === selectedBranch);
-    }
+    // Filtrar estrictamente por la sucursal activa (Armenia o San Rafael)
+    filtered = filtered.filter(o => (o.branchId || '1') === selectedBranch);
 
     if (selectedSeller !== 'all') {
-      filtered = filtered.filter(o => o.sellerId === selectedSeller);
+      const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
+      const selName = selectedSellerObj?.name?.trim().toLowerCase();
+      filtered = filtered.filter(o => {
+        if (o.sellerId === selectedSeller) return true;
+        if (selName && o.sellerName && o.sellerName.trim().toLowerCase() === selName) return true;
+        return false;
+      });
     }
 
     const now = new Date();
@@ -175,8 +212,13 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     // Calcular estadísticas globales con base en la lista filtrada de tiempo/vendedor/sucursal
     const activeNonVoided = orders.filter(o => {
       if (o.status === 'voided') return false;
-      if (selectedBranch !== 'all' && (o.branchId || '1') !== selectedBranch) return false;
-      if (selectedSeller !== 'all' && o.sellerId !== selectedSeller) return false;
+      if ((o.branchId || '1') !== selectedBranch) return false;
+      if (selectedSeller !== 'all') {
+        const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
+        const selName = selectedSellerObj?.name?.trim().toLowerCase();
+        const matchSeller = o.sellerId === selectedSeller || (selName && o.sellerName && o.sellerName.trim().toLowerCase() === selName);
+        if (!matchSeller) return false;
+      }
       return true;
     });
 
@@ -201,7 +243,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
     });
 
     return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal };
-  }, [orders, selectedSeller]);
+  }, [orders, selectedSeller, selectedBranch, sellers]);
 
   const totalRevenue = validOrders.reduce((sum, order) => sum + order.total, 0);
   const totalCost = validOrders.reduce((sum, order) => sum + order.totalCost, 0);
@@ -298,47 +340,9 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
           {/* Sucursal */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
             <span className="text-[10px] font-black uppercase text-slate-500 px-2">Sucursal:</span>
-            {currentUser?.cedula === '0923809529001' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setSelectedBranch('1')}
-                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                    selectedBranch === '1'
-                      ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
-                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-                  }`}
-                >
-                  📍 Matriz
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedBranch('2')}
-                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                    selectedBranch === '2'
-                      ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
-                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-                  }`}
-                >
-                  📍 Sucursal 2
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedBranch('all')}
-                  className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all ${
-                    selectedBranch === 'all'
-                      ? 'bg-black text-[#FFD700] shadow-none translate-y-[1px]'
-                      : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
-                  }`}
-                >
-                  📍 Todas
-                </button>
-              </>
-            ) : (
-              <span className="px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs bg-[#B91C1C] text-white">
-                📍 {defaultBranch === '2' ? 'Sucursal 2 (San Rafael)' : 'Matriz (Armenia)'}
-              </span>
-            )}
+            <span className="px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs bg-[#B91C1C] text-white shadow-none">
+              📍 {branchDisplayName}
+            </span>
           </div>
 
           {/* Vendedor (si es Administrador) */}
@@ -774,7 +778,7 @@ export function SalesView({ orders, currentUser, onViewReceipt, onDeleteOrder, o
                     <div className="flex flex-col">
                       <span className="opacity-60 uppercase text-[9px] tracking-widest">Sucursal</span>
                       <span className="bg-slate-900 text-[#FFD700] rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max">
-                        📍 {order.branchName || 'Matriz'}
+                        📍 {(order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
                       </span>
                     </div>
                     {order.customerName && (
