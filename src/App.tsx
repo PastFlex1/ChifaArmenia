@@ -658,6 +658,16 @@ export default function App() {
   };
 
   const handleDeleteTable = async (tableNum: string) => {
+    if (currentUser?.role !== 'Administrador') {
+      Swal.fire({
+        title: 'Acceso Denegado',
+        text: 'Solo los administradores tienen permiso para liberar o descartar comandas.',
+        icon: 'error',
+        confirmButtonColor: '#000'
+      });
+      return;
+    }
+
     const result = await Swal.fire({
       title: '¿Liberar comanda?',
       text: `Se descartará la comanda de "${tableNum}" y se liberará de Firebase.`,
@@ -964,6 +974,16 @@ export default function App() {
   };
 
   const handleFreeTableWithoutCheckout = async () => {
+    if (currentUser?.role !== 'Administrador') {
+      Swal.fire({
+        title: 'Acceso Denegado',
+        text: 'Solo los administradores tienen permiso para liberar mesas sin cobrar.',
+        icon: 'error',
+        confirmButtonColor: '#000'
+      });
+      return;
+    }
+
     const targetTableId = (activeTableId || tableNumber).trim();
     if (!targetTableId || isCheckingOut) return;
 
@@ -1419,7 +1439,7 @@ export default function App() {
             <MesasView
               activeTables={activeTables.filter(t => (t.branchId || '1') === currentBranchId)}
               onSelectTable={handleTableClick}
-              onDeleteTable={handleDeleteTable}
+              onDeleteTable={currentUser?.role === 'Administrador' ? handleDeleteTable : undefined}
               totalTables={30}
             />
           ) : currentView === 'materia_prima' ? (
@@ -1813,13 +1833,15 @@ export default function App() {
                   >
                     {isCheckingOut ? '...' : 'Cobrar y Liberar'}
                   </button>
-                  <button
-                    onClick={handleFreeTableWithoutCheckout}
-                    disabled={isCheckingOut}
-                    className="w-full py-1.5 2xl:py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
-                  >
-                    {isCheckingOut ? '...' : 'Liberar Sin Cobrar'}
-                  </button>
+                  {currentUser?.role === 'Administrador' && (
+                    <button
+                      onClick={handleFreeTableWithoutCheckout}
+                      disabled={isCheckingOut}
+                      className="w-full py-1.5 2xl:py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
+                    >
+                      {isCheckingOut ? '...' : 'Liberar Sin Cobrar (Admin)'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-1.5 2xl:gap-2 flex-1">
