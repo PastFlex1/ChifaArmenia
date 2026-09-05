@@ -6,11 +6,15 @@ import { Drink, Category } from '../types';
 export function DrinkInventoryView({ 
   drinks, 
   onAddDrink,
-  onDeleteDrink
+  onDeleteDrink,
+  currentBranchId,
+  currentBranchName
 }: { 
   drinks: Drink[], 
   onAddDrink: (d: Drink) => void,
-  onDeleteDrink: (id: string) => void
+  onDeleteDrink: (id: string) => void,
+  currentBranchId?: string,
+  currentBranchName?: string
 }) {
   const [formData, setFormData] = useState<{
     name: string;
@@ -67,10 +71,12 @@ export function DrinkInventoryView({
     d.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const branchLabel = currentBranchName || (currentBranchId === '2' ? 'Sucursal 2 (San Rafael)' : 'Matriz (Armenia)');
+
   const handleDownloadPDF = () => {
     generateInventoryPDF({
-      title: 'Inventario de Bebidas',
-      filename: 'bebidas',
+      title: `Inventario de Bebidas - ${branchLabel}`,
+      filename: `bebidas_${currentBranchId === '2' ? 'sucursal2' : 'matriz'}`,
       columns: ['Nombre', 'Categoría', 'Costo', 'Precio', 'Stock'],
       data: filteredDrinks.map(d => [
         d.name,
@@ -93,7 +99,12 @@ export function DrinkInventoryView({
             </div>
             <div>
               <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Bebida' : 'Inv. Bebidas'}</h2>
-              <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Bebida' : 'Ingreso de Bebidas'}</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Bebida' : 'Ingreso de Bebidas'}</span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-300">
+                  📍 {branchLabel}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -166,7 +177,12 @@ export function DrinkInventoryView({
       {/* Right List */}
       <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
-           <h2 className="font-black uppercase tracking-widest italic shrink-0">Inventario Bebidas</h2>
+           <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
+             Inventario Bebidas
+             <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400 text-blue-200">
+               {branchLabel}
+             </span>
+           </h2>
            <div className="flex gap-2 w-full lg:w-auto">
              <div className="relative flex-1 lg:w-64">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />

@@ -1,6 +1,6 @@
 import { doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { TableOrder, CartItem, RawMaterial, Drink, Dish, Order } from '../types';
+import { TableOrder, CartItem, RawMaterial, Drink, Dish, Order, getStockForBranch } from '../types';
 
 const DRAFTS_STORAGE_KEY = 'chifa_active_tables_drafts';
 
@@ -308,9 +308,15 @@ export async function syncTableToFirestore(
     const oldItems = previousTable ? previousTable.items : [];
     const newItems = tableOrder.items;
 
-    // Calcular cambio neto de stock
-    const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
-    const newDrinks = drinks.map(d => ({ ...d }));
+    // Calcular cambio neto de stock para la sucursal de esta mesa
+    const newRawMaterials = rawMaterials.map(rm => ({
+      ...rm,
+      stock: getStockForBranch(rm, branchId)
+    }));
+    const newDrinks = drinks.map(d => ({
+      ...d,
+      stock: getStockForBranch(d, branchId)
+    }));
 
     const processItems = (items: CartItem[], multiplier: number) => {
       items.forEach(cartItem => {
@@ -363,10 +369,36 @@ export async function syncTableToFirestore(
 
     const batch = writeBatch(db);
     newRawMaterials.forEach((rm, index) => {
-      if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+      const origStock = getStockForBranch(rawMaterials[index], branchId);
+      if (rm.stock !== origStock) {
+        if (branchId === '2') {
+          batch.update(doc(db, 'rawMaterials', rm.id), {
+            'stocks.2': rm.stock,
+            stock_sucursal2: rm.stock
+          });
+        } else {
+          batch.update(doc(db, 'rawMaterials', rm.id), {
+            stock: rm.stock,
+            'stocks.1': rm.stock
+          });
+        }
+      }
     });
     newDrinks.forEach((drink, index) => {
-      if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+      const origStock = getStockForBranch(drinks[index], branchId);
+      if (drink.stock !== origStock) {
+        if (branchId === '2') {
+          batch.update(doc(db, 'drinks', drink.id), {
+            'stocks.2': drink.stock,
+            stock_sucursal2: drink.stock
+          });
+        } else {
+          batch.update(doc(db, 'drinks', drink.id), {
+            stock: drink.stock,
+            'stocks.1': drink.stock
+          });
+        }
+      }
     });
 
     const docId = `${branchId}_${normalizedTable}`;

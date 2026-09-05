@@ -55,9 +55,9 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
   }, [activeTables, searchTerm]);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <div className="mesas-view-container flex-1 flex flex-col h-full overflow-hidden relative">
       {/* Banner Superior & Filtros */}
-      <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 shrink-0">
+      <div className="mesas-top-banner bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 shrink-0">
         <div>
           <h2 className="font-black uppercase tracking-widest flex items-center gap-2 text-xl">
             <LayoutGrid className="w-6 h-6 text-[#B91C1C]" />
@@ -72,7 +72,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => onSelectTable('PedidosYa')}
-            className="bg-[#B91C1C] hover:bg-red-800 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
+            className="mesas-direct-btn bg-[#B91C1C] hover:bg-red-800 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
             title="Crear pedido directo para PedidosYa (Cobro obligatorio)"
           >
             <Bike className="w-4 h-4 animate-bounce" /> PedidosYa
@@ -80,7 +80,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
 
           <button
             onClick={() => onSelectTable('Rappi')}
-            className="bg-orange-600 hover:bg-orange-700 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
+            className="mesas-direct-btn bg-orange-600 hover:bg-orange-700 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
             title="Crear pedido directo para Rappi (Cobro obligatorio)"
           >
             🧡 Rappi
@@ -88,7 +88,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
 
           <button
             onClick={() => onSelectTable('Uber Eats')}
-            className="bg-emerald-800 hover:bg-emerald-900 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
+            className="mesas-direct-btn bg-emerald-800 hover:bg-emerald-900 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
             title="Crear pedido directo para Uber Eats (Cobro obligatorio)"
           >
             🟢 Uber Eats
@@ -96,7 +96,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
 
           <button
             onClick={() => onSelectTable('Llevar')}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
+            className="mesas-direct-btn bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-xs px-3 py-2 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-1.5 transition-all active:translate-y-[1px]"
             title="Crear pedido directo Llevar"
           >
             <ShoppingBag className="w-4 h-4" /> Llevar
@@ -105,7 +105,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
 
         {/* Resumen de Total Retenido / Pendiente */}
         {activeTables.length > 0 && (
-          <div className="bg-[#FFD700] border-2 border-black rounded-xl px-4 py-2 flex items-center gap-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+          <div className="mesas-total-card bg-[#FFD700] border-2 border-black rounded-xl px-4 py-2 flex items-center gap-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
             <div className="w-8 h-8 rounded-full bg-black text-[#FFD700] flex items-center justify-center font-black">
               <DollarSign className="w-5 h-5" />
             </div>
@@ -158,7 +158,7 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
             <h3 className="font-black uppercase text-xs tracking-widest opacity-60 mb-3 flex items-center gap-2">
               <LayoutGrid className="w-4 h-4" /> Mesas Principales (1 - {totalTables})
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            <div className="mesas-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {tables.map(tableNumber => {
                 const tableOrder = findMatchingOrder(tableNumber);
                 const isOccupied = !!tableOrder;
@@ -171,13 +171,13 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
                   <button
                     key={tableNumber}
                     onClick={() => onSelectTable(tableOrder ? tableOrder.tableNumber : tableNumber)}
-                    className={`relative flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] min-h-[120px] group ${
+                    className={`mesa-card relative flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] min-h-[120px] group ${
                       isOccupied ? 'bg-red-50 hover:bg-red-100 border-red-900' : 'bg-green-50 hover:bg-green-100'
                     }`}
                   >
-                    <div className={`absolute top-2 right-2 w-3.5 h-3.5 rounded-full border-2 border-black ${isOccupied ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+                    <div className={`mesa-indicator absolute top-2 right-2 w-3.5 h-3.5 rounded-full border-2 border-black ${isOccupied ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
                     
-                    <span className="text-3xl font-black mb-1">M{tableNumber}</span>
+                    <span className="mesa-card-number text-3xl font-black mb-1">M{tableNumber}</span>
                     
                     {isOccupied ? (
                       <div className="flex flex-col items-center mt-1">

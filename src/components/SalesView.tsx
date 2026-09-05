@@ -40,14 +40,18 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     });
 
     if (result.isConfirmed && onVoidOrder) {
-      onVoidOrder(orderId);
-      Swal.fire({
-        title: 'Orden Anulada',
-        text: 'La orden ha sido anulada exitosamente y el inventario ha sido restituido.',
-        icon: 'success',
-        timer: 1800,
-        showConfirmButton: false
-      });
+      try {
+        await onVoidOrder(orderId);
+        Swal.fire({
+          title: 'Orden Anulada',
+          text: 'La orden ha sido anulada exitosamente y el inventario ha sido restituido.',
+          icon: 'success',
+          timer: 1800,
+          showConfirmButton: false
+        });
+      } catch (err: any) {
+        console.error('Error al anular orden:', err);
+      }
     }
   };
 
@@ -331,7 +335,7 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
+    <div className="sales-view-container flex-1 flex flex-col overflow-y-auto xl:overflow-hidden bg-[#F7F4F0] gap-4 pb-[80px] xl:pb-0">
       {/* Filters (Organized Control Bar with Pill Buttons) */}
       <div className="shrink-0 flex flex-col gap-3 bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
         
@@ -519,7 +523,7 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
       )}
 
       {/* Top Stats Cards Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 shrink-0">
+      <div className="sales-metrics-grid grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 shrink-0">
         <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
           <div className="flex items-center gap-2 mb-1.5">
             <div className="w-7 h-7 rounded-full bg-[#1A1A1A] text-[#FFD700] flex items-center justify-center shrink-0">

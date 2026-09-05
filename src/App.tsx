@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff, Bike } from 'lucide-react';
 import { CATEGORIES } from './data';
-import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder } from './types';
+import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder, getStockForBranch } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
 import { MateriaPrimaView } from './components/MateriaPrimaView';
 import { DrinkInventoryView } from './components/DrinkInventoryView';
@@ -14,7 +14,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, SyncState, LatencyStatus } from './utils/syncManager';
 
@@ -51,11 +51,25 @@ export default function App() {
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [orderCounter, setOrderCounter] = useState<number>(0);
 
-  // Asegurar zoom normal de 100% por defecto
+  // Asegurar zoom normal de 100% por defecto y detectar resolución 1366x768
   useEffect(() => {
     localStorage.removeItem('chifa_ui_zoom');
     const root = document.getElementById('root');
     if (root) root.style.zoom = '1';
+
+    const check1366 = () => {
+      const isExact1366 = (window.screen.width === 1366 && window.screen.height === 768);
+      const isViewport1366 = (window.innerWidth >= 1200 && window.innerWidth <= 1399 && window.innerHeight <= 820);
+      if (isExact1366 || isViewport1366) {
+        document.documentElement.classList.add('screen-1366');
+      } else {
+        document.documentElement.classList.remove('screen-1366');
+      }
+    };
+
+    check1366();
+    window.addEventListener('resize', check1366);
+    return () => window.removeEventListener('resize', check1366);
   }, []);
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
@@ -68,6 +82,21 @@ export default function App() {
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [drinks, setDrinks] = useState<Drink[]>([]);
   const [combos, setCombos] = useState<any[]>([]);
+
+  // Proyecciones de inventario para la sucursal activa
+  const branchRawMaterials = useMemo(() => {
+    return rawMaterials.map(rm => ({
+      ...rm,
+      stock: getStockForBranch(rm, currentBranchId)
+    }));
+  }, [rawMaterials, currentBranchId]);
+
+  const branchDrinks = useMemo(() => {
+    return drinks.map(dr => ({
+      ...dr,
+      stock: getStockForBranch(dr, currentBranchId)
+    }));
+  }, [drinks, currentBranchId]);
 
   // Network Connection Monitor (Offline-First)
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
@@ -475,7 +504,7 @@ export default function App() {
       let minAvailable = Infinity;
       combo.items.forEach((cItem: any) => {
         if (cItem.type === 'drink') {
-          const d = drinks.find(dr => dr.id === cItem.itemId);
+          const d = branchDrinks.find(dr => dr.id === cItem.itemId);
           if (d) {
             const available = Math.floor(d.stock / cItem.quantity);
             if (available < minAvailable) minAvailable = available;
@@ -486,7 +515,7 @@ export default function App() {
           const dish = dishes.find(d => d.id === cItem.itemId);
           if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
-              const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+              const rm = branchRawMaterials.find(r => r.id === ing.rawMaterialId);
               if (rm) {
                 const available = Math.floor(rm.stock / (ing.quantity * cItem.quantity));
                 if (available < minAvailable) minAvailable = available;
@@ -499,7 +528,7 @@ export default function App() {
       });
       return minAvailable;
     } else if (menuItem.isDrink) {
-      const d = drinks.find(dr => dr.id === menuItem.id);
+      const d = branchDrinks.find(dr => dr.id === menuItem.id);
       return d ? d.stock : 0;
     } else {
       // Dish doesn't track strictly without ingredients. If no ingredients or it's just a dish without recipe recorded:
@@ -508,7 +537,7 @@ export default function App() {
 
       let minAvailable = Infinity;
       dish.ingredients.forEach(ing => {
-        const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
+        const rm = branchRawMaterials.find(r => r.id === ing.rawMaterialId);
         if (rm) {
           const available = Math.floor(rm.stock / ing.quantity);
           if (available < minAvailable) minAvailable = available;
@@ -714,28 +743,35 @@ export default function App() {
     }
   };
 
-  const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[]) => {
-    const newRawMaterials = rawMaterials.map(rm => ({ ...rm }));
-    const newDrinks = drinks.map(d => ({ ...d }));
+  const getNetStockChanges = (oldItems: CartItem[], newItems: CartItem[], branchId: string = currentBranchId) => {
+    const newRawMaterials = rawMaterials.map(rm => ({ ...rm, stock: getStockForBranch(rm, branchId) }));
+    const newDrinks = drinks.map(d => ({ ...d, stock: getStockForBranch(d, branchId) }));
 
     const processItems = (items: CartItem[], multiplier: number) => {
       items.forEach(cartItem => {
-        if (cartItem.menuItem.isCombo) {
+        const itemQty = Number(cartItem.quantity) || 1;
+        const isCombo = cartItem.menuItem.isCombo || combos.some(c => c.id === cartItem.menuItem.id);
+        const isDrink = cartItem.menuItem.isDrink || drinks.some(d => d.id === cartItem.menuItem.id);
+
+        if (isCombo) {
           const combo = combos.find(c => c.id === cartItem.menuItem.id);
           if (combo) {
             combo.items.forEach((cItem: any) => {
-              if (cItem.type === 'drink') {
+              const cQty = Number(cItem.quantity) || 1;
+              if (cItem.type === 'drink' || drinks.some(d => d.id === cItem.itemId)) {
                 const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
                 if (drinkIndex >= 0) {
-                  newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity * multiplier));
+                  const newVal = newDrinks[drinkIndex].stock - (cQty * itemQty * multiplier);
+                  newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                 }
               } else {
                 const dish = dishes.find(d => d.id === cItem.itemId);
-                if (dish) {
+                if (dish && dish.ingredients) {
                   dish.ingredients.forEach(ing => {
                     const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
                     if (rmIndex >= 0) {
-                      const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier);
+                      const ingQty = Number(ing.quantity) || 0;
+                      const newVal = newRawMaterials[rmIndex].stock - (ingQty * cQty * itemQty * multiplier);
                       newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                     }
                   });
@@ -743,19 +779,20 @@ export default function App() {
               }
             });
           }
-        } else if (cartItem.menuItem.isDrink) {
+        } else if (isDrink) {
           const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
           if (drinkIndex >= 0) {
-            const newVal = newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier);
+            const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
             newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
           }
         } else {
           const dish = dishes.find(d => d.id === cartItem.menuItem.id);
-          if (dish) {
+          if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
               const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
               if (rmIndex >= 0) {
-                const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier);
+                const ingQty = Number(ing.quantity) || 0;
+                const newVal = newRawMaterials[rmIndex].stock - (ingQty * itemQty * multiplier);
                 newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
               }
             });
@@ -924,14 +961,36 @@ export default function App() {
       batch.set(doc(db, 'counters', 'orders'), { count: increment(1) }, { merge: true });
 
       newRawMaterials.forEach((rm, index) => {
-        if (rm.stock !== rawMaterials[index].stock) {
-          batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+        const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
+        if (rm.stock !== origStock) {
+          if (currentBranchId === '2') {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              'stocks.2': rm.stock,
+              stock_sucursal2: rm.stock
+            });
+          } else {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              stock: rm.stock,
+              'stocks.1': rm.stock
+            });
+          }
         }
       });
 
       newDrinks.forEach((drink, index) => {
-        if (drink.stock !== drinks[index].stock) {
-          batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+        const origStock = getStockForBranch(drinks[index], currentBranchId);
+        if (drink.stock !== origStock) {
+          if (currentBranchId === '2') {
+            batch.update(doc(db, 'drinks', drink.id), {
+              'stocks.2': drink.stock,
+              stock_sucursal2: drink.stock
+            });
+          } else {
+            batch.update(doc(db, 'drinks', drink.id), {
+              stock: drink.stock,
+              'stocks.1': drink.stock
+            });
+          }
         }
       });
 
@@ -1009,14 +1068,40 @@ export default function App() {
       const previousTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId);
       const oldItems = previousTable ? previousTable.items : [];
 
-      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, []);
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, [], currentBranchId);
 
       const batch = writeBatch(db);
       newRawMaterials.forEach((rm, index) => {
-        if (rm.stock !== rawMaterials[index].stock) batch.update(doc(db, 'rawMaterials', rm.id), { stock: rm.stock });
+        const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
+        if (rm.stock !== origStock) {
+          if (currentBranchId === '2') {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              'stocks.2': rm.stock,
+              stock_sucursal2: rm.stock
+            });
+          } else {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              stock: rm.stock,
+              'stocks.1': rm.stock
+            });
+          }
+        }
       });
       newDrinks.forEach((drink, index) => {
-        if (drink.stock !== drinks[index].stock) batch.update(doc(db, 'drinks', drink.id), { stock: drink.stock });
+        const origStock = getStockForBranch(drinks[index], currentBranchId);
+        if (drink.stock !== origStock) {
+          if (currentBranchId === '2') {
+            batch.update(doc(db, 'drinks', drink.id), {
+              'stocks.2': drink.stock,
+              stock_sucursal2: drink.stock
+            });
+          } else {
+            batch.update(doc(db, 'drinks', drink.id), {
+              stock: drink.stock,
+              'stocks.1': drink.stock
+            });
+          }
+        }
       });
       if (targetTableId && !isNonTableType(targetTableId)) {
         const docId = `${currentBranchId}_${targetTableId}`;
@@ -1079,73 +1164,120 @@ export default function App() {
   };
 
   const handleVoidOrder = async (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
-    if (order.status === 'voided') return;
+    let order = orders.find(o => o.id === orderId);
+    if (!order) {
+      try {
+        const snap = await getDoc(doc(db, 'orders', orderId));
+        if (snap.exists()) {
+          order = { ...snap.data(), id: snap.id } as Order;
+        }
+      } catch (err) {
+        console.error("Error al buscar orden en Firestore:", err);
+      }
+    }
+    if (!order) {
+      console.error("No se encontró la orden a anular:", orderId);
+      Swal.fire({
+        title: 'Error',
+        text: 'No se encontró la nota de venta a anular.',
+        icon: 'error',
+        confirmButtonColor: '#B91C1C'
+      });
+      throw new Error("No se encontró la orden a anular.");
+    }
+    if (order.status === 'voided') {
+      Swal.fire({
+        title: 'Orden Ya Anulada',
+        text: 'Esta nota de venta ya fue anulada previamente.',
+        icon: 'info',
+        confirmButtonColor: '#000'
+      });
+      return;
+    }
+
+    const orderBranchId = order.branchId || '1';
 
     try {
+      const { newRawMaterials, newDrinks } = getNetStockChanges(order.items || [], [], orderBranchId);
+
       const batch = writeBatch(db);
 
-      // We need local copies to track cumulative additions if multiple items use the same raw material
-      const updatedMaterials = new Map<string, number>();
-      const updatedDrinks = new Map<string, number>();
-
-      order.items.forEach(cartItem => {
-        if (cartItem.menuItem.isCombo) {
-          const combo = combos.find(c => c.id === cartItem.menuItem.id);
-          if (combo) {
-            combo.items.forEach((cItem: any) => {
-              if (cItem.type === 'drink') {
-                const drink = drinks.find(d => d.id === cItem.itemId);
-                if (drink) {
-                  const current = updatedDrinks.get(drink.id) ?? drink.stock;
-                  updatedDrinks.set(drink.id, current + (cItem.quantity * cartItem.quantity));
-                }
-              } else {
-                const dish = dishes.find(d => d.id === cItem.itemId);
-                if (dish) {
-                  dish.ingredients.forEach(ing => {
-                    const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-                    if (rm) {
-                      const current = updatedMaterials.get(rm.id) ?? rm.stock;
-                      updatedMaterials.set(rm.id, current + (ing.quantity * cItem.quantity * cartItem.quantity));
-                    }
-                  });
-                }
-              }
+      newRawMaterials.forEach((rm, index) => {
+        const origStock = getStockForBranch(rawMaterials[index], orderBranchId);
+        if (rm.stock !== origStock) {
+          if (orderBranchId === '2') {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              'stocks.2': rm.stock,
+              stock_sucursal2: rm.stock
             });
-          }
-        } else if (cartItem.menuItem.isDrink) {
-          const drink = drinks.find(d => d.id === cartItem.menuItem.id);
-          if (drink) {
-            const current = updatedDrinks.get(drink.id) ?? drink.stock;
-            updatedDrinks.set(drink.id, current + cartItem.quantity);
-          }
-        } else {
-          const dish = dishes.find(d => d.id === cartItem.menuItem.id);
-          if (dish) {
-            dish.ingredients.forEach(ing => {
-              const rm = rawMaterials.find(r => r.id === ing.rawMaterialId);
-              if (rm) {
-                const current = updatedMaterials.get(rm.id) ?? rm.stock;
-                updatedMaterials.set(rm.id, current + (ing.quantity * cartItem.quantity));
-              }
+          } else {
+            batch.update(doc(db, 'rawMaterials', rm.id), {
+              stock: rm.stock,
+              'stocks.1': rm.stock
             });
           }
         }
       });
 
-      updatedDrinks.forEach((stock, id) => {
-        batch.update(doc(db, 'drinks', id), { stock });
+      newDrinks.forEach((drink, index) => {
+        const origStock = getStockForBranch(drinks[index], orderBranchId);
+        if (drink.stock !== origStock) {
+          if (orderBranchId === '2') {
+            batch.update(doc(db, 'drinks', drink.id), {
+              'stocks.2': drink.stock,
+              stock_sucursal2: drink.stock
+            });
+          } else {
+            batch.update(doc(db, 'drinks', drink.id), {
+              stock: drink.stock,
+              'stocks.1': drink.stock
+            });
+          }
+        }
       });
 
-      updatedMaterials.forEach((stock, id) => {
-        batch.update(doc(db, 'rawMaterials', id), { stock });
-      });
-
-      batch.update(doc(db, 'orders', orderId), { status: 'voided' });
+      batch.update(doc(db, 'orders', order.id), { status: 'voided' });
 
       await batch.commit();
+
+      // Actualizar estado local inmediatamente para retroalimentación visual instantánea
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'voided' } : o));
+      if (orderBranchId === currentBranchId) {
+        setRawMaterials(prev => prev.map(rm => {
+          const updated = newRawMaterials.find(n => n.id === rm.id);
+          if (!updated) return rm;
+          if (currentBranchId === '2') {
+            return {
+              ...rm,
+              stock_sucursal2: updated.stock,
+              stocks: { ...(rm.stocks || {}), '2': updated.stock }
+            };
+          } else {
+            return {
+              ...rm,
+              stock: updated.stock,
+              stocks: { ...(rm.stocks || {}), '1': updated.stock }
+            };
+          }
+        }));
+        setDrinks(prev => prev.map(dr => {
+          const updated = newDrinks.find(n => n.id === dr.id);
+          if (!updated) return dr;
+          if (currentBranchId === '2') {
+            return {
+              ...dr,
+              stock_sucursal2: updated.stock,
+              stocks: { ...(dr.stocks || {}), '2': updated.stock }
+            };
+          } else {
+            return {
+              ...dr,
+              stock: updated.stock,
+              stocks: { ...(dr.stocks || {}), '1': updated.stock }
+            };
+          }
+        }));
+      }
     } catch (e: any) {
       console.error("Error voiding order:", e);
       const errMsg = e?.message || 'Ocurrió un error inesperado.';
@@ -1155,6 +1287,7 @@ export default function App() {
         icon: 'error',
         confirmButtonColor: '#000'
       });
+      throw e;
     }
   };
 
@@ -1175,13 +1308,13 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-[100dvh] bg-[#F7F4F0] text-[#1A1A1A] font-sans p-3 lg:p-4 pb-[80px] lg:pb-4 overflow-hidden select-none gap-4 relative">
+    <div className="pos-main-layout flex h-[100dvh] bg-[#F7F4F0] text-[#1A1A1A] font-sans p-3 lg:p-4 pb-[80px] lg:pb-4 overflow-hidden select-none gap-4 relative">
       {showWelcome && (
         <WelcomeModal user={currentUser} onClose={() => setShowWelcome(false)} />
       )}
 
-      <div className="hidden lg:flex lg:w-[210px] 2xl:w-[250px] flex-col shrink-0 gap-2 h-full z-10">
-        <div className="bg-[#B91C1C] text-white p-3 2xl:p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden shrink-0">
+      <div className="pos-sidebar hidden lg:flex lg:w-[210px] 2xl:w-[250px] flex-col shrink-0 gap-2 h-full z-10">
+        <div className="pos-brand-card bg-[#B91C1C] text-white p-3 2xl:p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden shrink-0">
           <div className="flex flex-col z-10">
             <span className="text-[10px] 2xl:text-xs font-bold uppercase tracking-widest opacity-80 mb-0.5">Restaurante</span>
             <h1 className="text-2xl 2xl:text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
@@ -1194,11 +1327,11 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 bg-white p-2 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
+        <nav className="pos-nav flex-1 bg-white p-2 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1 overflow-y-auto">
           {canView('mesas') && (
             <button
               onClick={() => setCurrentView('mesas')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'mesas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <LayoutGrid className="w-5 h-5" /> Mesas
@@ -1212,7 +1345,7 @@ export default function App() {
                 setCart([]);
                 setCurrentView('pos');
               }}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'pos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Store className="w-5 h-5" /> Punto de Venta
@@ -1221,7 +1354,7 @@ export default function App() {
           {canView('materia_prima') && (
             <button
               onClick={() => setCurrentView('materia_prima')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'materia_prima' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Package className="w-5 h-5" /> Materia Prima
@@ -1230,7 +1363,7 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('inv_comida')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_comida' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <ChefHat className="w-5 h-5" /> Inv. Comidas
@@ -1239,7 +1372,7 @@ export default function App() {
           {canView('inv_bebidas') && (
             <button
               onClick={() => setCurrentView('inv_bebidas')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'inv_bebidas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Wine className="w-5 h-5" /> Inv. Bebidas
@@ -1248,7 +1381,7 @@ export default function App() {
           {canView('inv_comida') && (
             <button
               onClick={() => setCurrentView('combos')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'combos' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Layers className="w-5 h-5" /> Combos
@@ -1260,7 +1393,7 @@ export default function App() {
           {canView('ventas') && (
             <button
               onClick={() => setCurrentView('ventas')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'ventas' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <LineChart className="w-5 h-5" /> Ventas
@@ -1269,7 +1402,7 @@ export default function App() {
           {canView('usuarios') && (
             <button
               onClick={() => setCurrentView('usuarios')}
-              className={`w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'usuarios' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
                 }`}
             >
               <Users className="w-5 h-5" /> Personal
@@ -1277,7 +1410,7 @@ export default function App() {
           )}
         </nav>
 
-        <div className="bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex flex-col gap-2">
+        <div className="pos-session-card bg-white p-3 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase font-black opacity-50">Sesión Actual</span>
@@ -1305,7 +1438,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-1">
+        <div className="pos-sidebar-footer text-[10px] text-center font-bold text-slate-400 uppercase tracking-widest mt-auto shrink-0 pb-1">
           Elaborado por<br /><span className="text-[#B91C1C]">Palma Nexus Solutions</span>
         </div>
       </div>
@@ -1335,11 +1468,11 @@ export default function App() {
       {/* =========================================
           MAIN CONTENT AREA
           ========================================= */}
-      <div className="flex-1 flex flex-col min-w-0 z-10 h-full pt-[76px] lg:pt-0 pb-0">
+      <div className="pos-center-area flex-1 flex flex-col min-w-0 z-10 h-full pt-[76px] lg:pt-0 pb-0">
 
         {/* POS Header Actions (Search) */}
         {currentView === 'pos' && (
-          <div className="shrink-0 mb-3 2xl:mb-4 flex flex-col sm:flex-row gap-3">
+          <div className="pos-search-bar shrink-0 mb-3 2xl:mb-4 flex flex-col sm:flex-row gap-3">
             <div className="relative w-full shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 opacity-40 text-black" />
@@ -1347,7 +1480,7 @@ export default function App() {
               <input
                 type="text"
                 placeholder="Buscar platillo..."
-                className="block w-full pl-11 pr-4 py-2.5 2xl:py-3 border-2 border-black rounded-xl font-bold bg-white placeholder-[#1A1A1A] placeholder-opacity-40 focus:outline-none focus:bg-[#FFD700]/10 transition-colors uppercase text-sm"
+                className="pos-search-input block w-full pl-11 pr-4 py-2.5 2xl:py-3 border-2 border-black rounded-xl font-bold bg-white placeholder-[#1A1A1A] placeholder-opacity-40 focus:outline-none focus:bg-[#FFD700]/10 transition-colors uppercase text-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -1361,7 +1494,7 @@ export default function App() {
             <div className="flex flex-col h-full bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
 
               {/* Horizontal Categories */}
-              <div className="shrink-0 px-3 2xl:px-4 pt-3 pb-2 border-b-2 border-black/10 bg-slate-50 flex gap-2 overflow-x-auto scrollbar-hide">
+              <div className="pos-category-bar shrink-0 px-3 2xl:px-4 pt-3 pb-2 border-b-2 border-black/10 bg-slate-50 flex gap-2 overflow-x-auto scrollbar-hide">
                 {['Todos', ...CATEGORIES].map((category) => (
                   <button
                     key={category}
@@ -1369,7 +1502,7 @@ export default function App() {
                       setActiveCategory(category as Category | 'Todos');
                       setSearchQuery('');
                     }}
-                    className={`px-3.5 2xl:px-5 py-2 2xl:py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${activeCategory === category && !searchQuery
+                    className={`pos-category-btn px-3.5 2xl:px-5 py-2 2xl:py-2.5 rounded-full border-2 border-black font-black uppercase text-xs whitespace-nowrap transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none ${activeCategory === category && !searchQuery
                       ? 'bg-[#B91C1C] text-white'
                       : 'bg-white hover:bg-slate-100 text-slate-800'
                       }`}
@@ -1380,7 +1513,7 @@ export default function App() {
               </div>
 
               {/* Menu Items Grid */}
-              <div className="flex-1 overflow-y-auto p-3 2xl:p-4 content-start">
+              <div className="pos-products-grid flex-1 overflow-y-auto p-3 2xl:p-4 content-start">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 2xl:gap-4">
                   {filteredItems.map((item) => {
                     const maxStock = getMaxAvailable(item);
@@ -1391,7 +1524,7 @@ export default function App() {
                       <div
                         key={item.id}
                         onClick={() => !isOutOfStock && addToCart(item)}
-                        className={`p-3 2xl:p-4 rounded-xl border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[120px] 2xl:min-h-[140px] relative ${isOutOfStock
+                        className={`pos-product-card p-3 2xl:p-4 rounded-xl border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all flex flex-col justify-between min-h-[120px] 2xl:min-h-[140px] relative ${isOutOfStock
                           ? 'bg-slate-200 opacity-60 cursor-not-allowed'
                           : 'bg-white hover:bg-[#FFD700] hover:translate-y-[-2px] hover:translate-x-[-2px] hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] cursor-pointer group'
                           }`}
@@ -1444,8 +1577,38 @@ export default function App() {
             />
           ) : currentView === 'materia_prima' ? (
             <MateriaPrimaView
-              rawMaterials={rawMaterials}
-              onAddMaterial={async (m) => await setDoc(doc(db, 'rawMaterials', m.id), m)}
+              rawMaterials={branchRawMaterials}
+              currentBranchId={currentBranchId}
+              currentBranchName={currentBranchName}
+              onAddMaterial={async (m) => {
+                const existing = rawMaterials.find(rm => rm.id === m.id);
+                const existingStocks = existing?.stocks || {};
+                const inputStock = Number(m.stock) || 0;
+
+                const updatedStocks = {
+                  ...existingStocks,
+                  [currentBranchId]: inputStock
+                };
+
+                const payload: any = {
+                  ...m,
+                  stocks: updatedStocks
+                };
+
+                if (currentBranchId === '2') {
+                  payload.stock_sucursal2 = inputStock;
+                  if (existing) {
+                    payload.stock = existing.stock ?? 0;
+                  }
+                } else {
+                  payload.stock = inputStock;
+                  if (existing && existing.stock_sucursal2 !== undefined) {
+                    payload.stock_sucursal2 = existing.stock_sucursal2;
+                  }
+                }
+
+                await setDoc(doc(db, 'rawMaterials', m.id), payload, { merge: true });
+              }}
               onDeleteMaterial={async (id) => {
                 const usedInDish = dishes.find(d => d.ingredients?.some(ing => ing.rawMaterialId === id));
                 if (usedInDish) {
@@ -1497,7 +1660,7 @@ export default function App() {
           ) : currentView === 'inv_comida' ? (
             <DishInventoryView
               dishes={dishes}
-              rawMaterials={rawMaterials}
+              rawMaterials={branchRawMaterials}
               onAddDish={async (d) => await setDoc(doc(db, 'dishes', d.id), d)}
               onDeleteDish={async (id) => {
                 const usedInCombo = combos.find(c => c.items?.some((i: any) => i.type === 'dish' && i.itemId === id));
@@ -1517,15 +1680,45 @@ export default function App() {
             <ComboInventoryView
               combos={combos}
               dishes={dishes}
-              drinks={drinks}
-              rawMaterials={rawMaterials}
+              drinks={branchDrinks}
+              rawMaterials={branchRawMaterials}
               onAddCombo={async (c) => await setDoc(doc(db, 'combos', c.id), c)}
               onDeleteCombo={async (id) => await deleteDoc(doc(db, 'combos', id))}
             />
           ) : (
             <DrinkInventoryView
-              drinks={drinks}
-              onAddDrink={async (d) => await setDoc(doc(db, 'drinks', d.id), d)}
+              drinks={branchDrinks}
+              currentBranchId={currentBranchId}
+              currentBranchName={currentBranchName}
+              onAddDrink={async (d) => {
+                const existing = drinks.find(dr => dr.id === d.id);
+                const existingStocks = existing?.stocks || {};
+                const inputStock = Number(d.stock) || 0;
+
+                const updatedStocks = {
+                  ...existingStocks,
+                  [currentBranchId]: inputStock
+                };
+
+                const payload: any = {
+                  ...d,
+                  stocks: updatedStocks
+                };
+
+                if (currentBranchId === '2') {
+                  payload.stock_sucursal2 = inputStock;
+                  if (existing) {
+                    payload.stock = existing.stock ?? 0;
+                  }
+                } else {
+                  payload.stock = inputStock;
+                  if (existing && existing.stock_sucursal2 !== undefined) {
+                    payload.stock_sucursal2 = existing.stock_sucursal2;
+                  }
+                }
+
+                await setDoc(doc(db, 'drinks', d.id), payload, { merge: true });
+              }}
               onDeleteDrink={async (id) => {
                 const usedInCombo = combos.find(c => c.items?.some((i: any) => i.type === 'drink' && i.itemId === id));
                 if (usedInCombo) {
@@ -1546,10 +1739,10 @@ export default function App() {
 
       {/* RIGHT PANEL - CART */}
       {currentView === 'pos' && (
-        <div className="w-[310px] 2xl:w-[370px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
+        <div className="pos-cart-panel w-[310px] 2xl:w-[370px] bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20 hidden lg:flex flex-col overflow-hidden shrink-0">
 
           {/* Cart Header */}
-          <div className="bg-[#B91C1C] text-white p-3 2xl:p-4 flex flex-col gap-1 z-10 shrink-0 border-b-2 border-black">
+          <div className="pos-cart-header bg-[#B91C1C] text-white p-3 2xl:p-4 flex flex-col gap-1 z-10 shrink-0 border-b-2 border-black">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-black uppercase tracking-widest italic flex items-center gap-2 text-base">
                 <ShoppingBag className="w-5 h-5 text-[#FFD700]" />
@@ -1587,9 +1780,9 @@ export default function App() {
             </span>
           </div>
 
-          <div className="p-3 2xl:p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
+          <div className="pos-cart-inputs p-3 2xl:p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
             {/* Selector Rápido de Tipo de Comanda */}
-            <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
+            <div className="pos-order-type-selector flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
               <button
                 type="button"
                 disabled={Boolean(activeTableId)}
@@ -1598,7 +1791,7 @@ export default function App() {
                     setTableNumber('');
                   }
                 }}
-                className={`flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${!isNonTableType(tableNumber)
+                className={`pos-order-type-btn flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${!isNonTableType(tableNumber)
                   ? 'bg-[#1A1A1A] text-[#FFD700] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
@@ -1611,7 +1804,7 @@ export default function App() {
                 onClick={() => {
                   if (!activeTableId) setTableNumber('Llevar');
                 }}
-                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar')
+                className={`pos-order-type-btn flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar')
                   ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
@@ -1624,7 +1817,7 @@ export default function App() {
                 onClick={() => {
                   if (!activeTableId) setTableNumber('PedidosYa');
                 }}
-                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
+                className={`pos-order-type-btn flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
                   ? 'bg-[#B91C1C] text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] animate-pulse'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
@@ -1637,7 +1830,7 @@ export default function App() {
                 onClick={() => {
                   if (!activeTableId) setTableNumber('Rappi');
                 }}
-                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${tableNumber.trim().toLowerCase() === 'rappi'
+                className={`pos-order-type-btn flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${tableNumber.trim().toLowerCase() === 'rappi'
                   ? 'bg-orange-600 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
@@ -1650,7 +1843,7 @@ export default function App() {
                 onClick={() => {
                   if (!activeTableId) setTableNumber('Uber Eats');
                 }}
-                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
+                className={`pos-order-type-btn flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
                   ? 'bg-emerald-950 text-emerald-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
                   : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
                   }`}
@@ -1713,7 +1906,7 @@ export default function App() {
           </div>
 
           {/* Cart Items */}
-          <div className="flex-1 overflow-y-auto w-full p-4 scrollbar-hide">
+          <div className="pos-cart-items-list flex-1 overflow-y-auto w-full p-4 scrollbar-hide">
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 opacity-30">
                 <ShoppingBag className="w-12 h-12 stroke-2" />
@@ -1722,13 +1915,13 @@ export default function App() {
             ) : (
               <div className="space-y-4">
                 {cart.map((item) => (
-                  <div key={item.id} className="flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
+                  <div key={item.id} className="pos-cart-item-row flex justify-between items-center border-b border-dashed border-slate-300 pb-3">
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
                         min="1"
                         disabled={Boolean(activeTableId) && currentUser?.role !== 'Administrador'}
-                        className="w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
+                        className="pos-cart-qty-input w-12 py-1 px-1 bg-white border-2 border-black rounded-lg text-center font-black text-[#B91C1C] text-sm focus:outline-none focus:ring-2 focus:ring-[#B91C1C] disabled:bg-slate-100 disabled:opacity-80"
                         value={item.quantity}
                         onChange={(e) => updateQuantityExact(item.id, e.target.value)}
                         onBlur={() => handleBlurQuantity(item.id)}
@@ -1760,7 +1953,7 @@ export default function App() {
           </div>
 
           {/* Checkout Section */}
-          <div className="p-3 2xl:p-4 bg-slate-50 border-t-2 border-black shrink-0">
+          <div className="pos-checkout-section p-3 2xl:p-4 bg-slate-50 border-t-2 border-black shrink-0">
             <div className="flex justify-between items-center mb-1.5 2xl:mb-2">
               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase opacity-80 select-none">
                 <input type="checkbox" checked={isHolidayIva} onChange={(e) => setIsHolidayIva(e.target.checked)} className="w-4 h-4 cursor-pointer accent-[#B91C1C]" />
@@ -1777,7 +1970,7 @@ export default function App() {
             </div>
             <div className="flex justify-between items-end mb-2.5 2xl:mb-4">
               <span className="text-xs font-black uppercase tracking-widest">Total a Pagar</span>
-              <span className="text-2xl 2xl:text-3xl font-black">{formatPrice(cartTotal)}</span>
+              <span className="pos-checkout-total text-2xl 2xl:text-3xl font-black">{formatPrice(cartTotal)}</span>
             </div>
 
             <div className="flex justify-between items-center mb-2 gap-2">
@@ -1785,7 +1978,7 @@ export default function App() {
               <input
                 type="number"
                 placeholder="0.00"
-                className="w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]"
+                className="pos-cash-input w-24 px-2 py-1 bg-white border-2 border-black rounded text-right font-black text-sm focus:outline-none focus:border-[#B91C1C]"
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
               />
@@ -1803,7 +1996,7 @@ export default function App() {
                 <button
                   onClick={clearCart}
                   disabled={cart.length === 0 || isCheckingOut}
-                  className="py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                  className="pos-cart-action-btn py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
                   title="Limpiar Orden"
                 >
                   <Trash2 className="w-5 h-5 text-[#B91C1C]" />
@@ -1812,7 +2005,7 @@ export default function App() {
               <button
                 onClick={handlePrintPreview}
                 disabled={cart.length === 0 || isCheckingOut}
-                className="py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                className="pos-cart-action-btn py-2.5 px-3 2xl:py-4 2xl:px-4 bg-white border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
                 title="Imprimir Pre-cuenta o Comanda"
               >
                 <Printer className="w-5 h-5 text-black" />
@@ -1822,14 +2015,14 @@ export default function App() {
                   <button
                     onClick={handleSaveTable}
                     disabled={isCheckingOut}
-                    className="w-full py-2 px-2 bg-emerald-50 border-2 border-black text-emerald-800 rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-emerald-100 active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1"
+                    className="pos-cart-action-btn w-full py-2 px-2 bg-emerald-50 border-2 border-black text-emerald-800 rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-emerald-100 active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1"
                   >
                     ✓ Guardado Automático (Ir a Mesas)
                   </button>
                   <button
                     onClick={handleCheckout}
                     disabled={cart.length === 0 || isCheckingOut}
-                    className="w-full py-2 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-[0.1em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                    className="pos-cart-action-btn w-full py-2 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-[0.1em] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
                   >
                     {isCheckingOut ? '...' : 'Cobrar y Liberar'}
                   </button>
@@ -1837,7 +2030,7 @@ export default function App() {
                     <button
                       onClick={handleFreeTableWithoutCheckout}
                       disabled={isCheckingOut}
-                      className="w-full py-1.5 2xl:py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
+                      className="pos-cart-action-btn w-full py-1.5 2xl:py-2 px-2 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-[10px] tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 hover:bg-red-800"
                     >
                       {isCheckingOut ? '...' : 'Liberar Sin Cobrar (Admin)'}
                     </button>
@@ -1855,7 +2048,7 @@ export default function App() {
                     <button
                       onClick={() => handleSaveTable()}
                       disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
-                      className="flex-1 py-2.5 2xl:py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                      className="pos-cart-action-btn flex-1 py-2.5 2xl:py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
                       title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
                     >
                       Guardar en Mesa
@@ -1863,7 +2056,7 @@ export default function App() {
                     <button
                       onClick={handleCheckout}
                       disabled={cart.length === 0 || isCheckingOut}
-                      className={`flex-1 py-2.5 2xl:py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${isDeliveryApp(tableNumber)
+                      className={`pos-cart-action-btn flex-1 py-2.5 2xl:py-3 px-2 border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${isDeliveryApp(tableNumber)
                         ? 'bg-[#B91C1C] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-red-800'
                         : 'bg-black text-[#FFD700] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)]'
                         }`}

@@ -52,3 +52,583 @@
     -moz-appearance: textfield;
   }
 }
+
+/* =========================================================================
+   RESPONSIVE EXCLUSIVO PARA RESOLUCIÓN 1366 x 768 (CHIFA POS)
+   Diseñado especialmente para monitores y laptops POS de 1366x768.
+   NO afecta pantallas 1920x1080, tablets ni dispositivos móviles.
+   ========================================================================= */
+
+@media screen and (min-width: 1200px) and (max-width: 1399px) and (max-height: 820px),
+       screen and (width: 1366px) and (height: 768px) {
+
+  /* 1. Layout General */
+  .pos-main-layout {
+    padding: 0.5rem !important;
+    gap: 0.5rem !important;
+  }
+
+  /* 2. Barra Lateral Izquierda */
+  .pos-sidebar {
+    width: 185px !important;
+    min-width: 185px !important;
+    gap: 0.35rem !important;
+  }
+
+  .pos-brand-card {
+    padding: 0.55rem 0.65rem !important;
+  }
+
+  .pos-brand-card h1 {
+    font-size: 1.15rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .pos-brand-card svg {
+    width: 3.5rem !important;
+    height: 3.5rem !important;
+  }
+
+  .pos-nav {
+    padding: 0.25rem !important;
+    gap: 0.15rem !important;
+  }
+
+  .pos-nav-item {
+    padding: 0.42rem 0.6rem !important;
+    font-size: 0.68rem !important;
+    gap: 0.4rem !important;
+    border-radius: 0.6rem !important;
+  }
+
+  .pos-nav-item svg {
+    width: 1rem !important;
+    height: 1rem !important;
+  }
+
+  .pos-session-card {
+    padding: 0.4rem 0.5rem !important;
+    gap: 0.25rem !important;
+  }
+
+  .pos-session-card span.truncate {
+    max-width: 90px !important;
+    font-size: 0.72rem !important;
+  }
+
+  .pos-session-card button {
+    padding: 0.4rem !important;
+  }
+
+  .pos-session-card button svg {
+    width: 1rem !important;
+    height: 1rem !important;
+  }
+
+  .pos-sidebar-footer {
+    font-size: 0.55rem !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* 3. Área Central POS (Búsqueda, Categorías y Platillos) */
+  .pos-search-bar {
+    margin-bottom: 0.35rem !important;
+  }
+
+  .pos-search-input {
+    padding: 0.35rem 0.75rem 0.35rem 2.2rem !important;
+    font-size: 0.78rem !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .pos-category-bar {
+    padding: 0.35rem 0.6rem !important;
+    gap: 0.35rem !important;
+  }
+
+  .pos-category-btn {
+    padding: 0.25rem 0.65rem !important;
+    font-size: 0.68rem !important;
+  }
+
+  .pos-products-grid {
+    padding: 0.45rem !important;
+    gap: 0.45rem !important;
+  }
+
+  .pos-product-card {
+    padding: 0.45rem !important;
+    min-height: 84px !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .pos-product-card h3 {
+    font-size: 0.75rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .pos-product-card span.opacity-50 {
+    font-size: 0.55rem !important;
+  }
+
+  .pos-product-card span.font-black {
+    font-size: 0.88rem !important;
+  }
+
+  .pos-product-card button {
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+  }
+
+  /* 4. Panel Derecho (Nota de Venta / Carrito) */
+  .pos-cart-panel {
+    width: 295px !important;
+    min-width: 295px !important;
+    border-radius: 0.85rem !important;
+  }
+
+  .pos-cart-header {
+    padding: 0.45rem 0.65rem !important;
+  }
+
+  .pos-cart-header h2 {
+    font-size: 0.82rem !important;
+  }
+
+  .pos-cart-inputs {
+    padding: 0.35rem 0.5rem !important;
+    gap: 0.25rem !important;
+  }
+
+  .pos-cart-inputs input {
+    font-size: 0.75rem !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  .pos-cart-inputs textarea {
+    font-size: 0.72rem !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 0.25rem 0.45rem !important;
+  }
+
+  .pos-order-type-selector {
+    padding: 0.15rem !important;
+    gap: 0.15rem !important;
+  }
+
+  .pos-order-type-btn {
+    padding: 0.15rem 0.3rem !important;
+    font-size: 0.58rem !important;
+    min-width: unset !important;
+    border-radius: 0.45rem !important;
+  }
+
+  .pos-order-type-btn svg {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+  }
+
+  .pos-cart-items-list {
+    padding: 0.35rem 0.5rem !important;
+  }
+
+  .pos-cart-item-row {
+    padding-bottom: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .pos-cart-item-row span {
+    font-size: 0.72rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .pos-cart-qty-input {
+    width: 2.15rem !important;
+    font-size: 0.75rem !important;
+    padding: 0.15rem 0.1rem !important;
+    border-radius: 0.4rem !important;
+  }
+
+  .pos-checkout-section {
+    padding: 0.4rem 0.6rem !important;
+  }
+
+  .pos-checkout-section label {
+    font-size: 0.65rem !important;
+    margin-bottom: 0.2rem !important;
+  }
+
+  .pos-checkout-total {
+    font-size: 1.35rem !important;
+    line-height: 1 !important;
+  }
+
+  .pos-cash-input {
+    width: 4.5rem !important;
+    padding: 0.15rem 0.35rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .pos-cart-action-btn {
+    padding: 0.35rem 0.45rem !important;
+    font-size: 0.68rem !important;
+    border-radius: 0.55rem !important;
+  }
+
+  /* 5. Vista de Mesas */
+  .mesas-top-banner {
+    padding: 0.45rem 0.75rem !important;
+    margin-bottom: 0.4rem !important;
+    gap: 0.4rem !important;
+    border-radius: 0.75rem !important;
+  }
+
+  .mesas-top-banner h2 {
+    font-size: 1rem !important;
+  }
+
+  .mesas-direct-btn {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.65rem !important;
+    border-radius: 0.55rem !important;
+  }
+
+  .mesas-total-card {
+    padding: 0.25rem 0.6rem !important;
+    border-radius: 0.55rem !important;
+  }
+
+  .mesas-total-card span {
+    font-size: 0.85rem !important;
+  }
+
+  .mesas-grid {
+    gap: 0.45rem !important;
+  }
+
+  .mesa-card {
+    padding: 0.45rem !important;
+    min-height: 72px !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .mesa-card-number {
+    font-size: 1.25rem !important;
+    margin-bottom: 0 !important;
+  }
+
+  .mesa-indicator {
+    width: 0.65rem !important;
+    height: 0.65rem !important;
+    top: 0.35rem !important;
+    right: 0.35rem !important;
+  }
+
+  /* 6. Vista de Ventas */
+  .sales-metrics-grid {
+    gap: 0.4rem !important;
+  }
+
+  .sales-metrics-grid > div {
+    padding: 0.4rem 0.5rem !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .sales-metrics-grid h3 {
+    font-size: 0.58rem !important;
+  }
+
+  .sales-metrics-grid p {
+    font-size: 1.15rem !important;
+  }
+
+  /* 7. SweetAlert2 */
+  div:where(.swal2-container) div:where(.swal2-popup) {
+    font-size: 0.85rem !important;
+    padding: 1rem !important;
+  }
+}
+
+/* Duplicar reglas para el selector de clase .screen-1366 activado por detección de pantalla */
+.screen-1366 .pos-main-layout {
+  padding: 0.5rem !important;
+  gap: 0.5rem !important;
+}
+
+.screen-1366 .pos-sidebar {
+  width: 185px !important;
+  min-width: 185px !important;
+  gap: 0.35rem !important;
+}
+
+.screen-1366 .pos-brand-card {
+  padding: 0.55rem 0.65rem !important;
+}
+
+.screen-1366 .pos-brand-card h1 {
+  font-size: 1.15rem !important;
+  line-height: 1.15 !important;
+}
+
+.screen-1366 .pos-brand-card svg {
+  width: 3.5rem !important;
+  height: 3.5rem !important;
+}
+
+.screen-1366 .pos-nav {
+  padding: 0.25rem !important;
+  gap: 0.15rem !important;
+}
+
+.screen-1366 .pos-nav-item {
+  padding: 0.42rem 0.6rem !important;
+  font-size: 0.68rem !important;
+  gap: 0.4rem !important;
+  border-radius: 0.6rem !important;
+}
+
+.screen-1366 .pos-nav-item svg {
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+.screen-1366 .pos-session-card {
+  padding: 0.4rem 0.5rem !important;
+  gap: 0.25rem !important;
+}
+
+.screen-1366 .pos-session-card span.truncate {
+  max-width: 90px !important;
+  font-size: 0.72rem !important;
+}
+
+.screen-1366 .pos-session-card button {
+  padding: 0.4rem !important;
+}
+
+.screen-1366 .pos-session-card button svg {
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+.screen-1366 .pos-sidebar-footer {
+  font-size: 0.55rem !important;
+  padding-bottom: 0 !important;
+}
+
+.screen-1366 .pos-search-bar {
+  margin-bottom: 0.35rem !important;
+}
+
+.screen-1366 .pos-search-input {
+  padding: 0.35rem 0.75rem 0.35rem 2.2rem !important;
+  font-size: 0.78rem !important;
+  border-radius: 0.65rem !important;
+}
+
+.screen-1366 .pos-category-bar {
+  padding: 0.35rem 0.6rem !important;
+  gap: 0.35rem !important;
+}
+
+.screen-1366 .pos-category-btn {
+  padding: 0.25rem 0.65rem !important;
+  font-size: 0.68rem !important;
+}
+
+.screen-1366 .pos-products-grid {
+  padding: 0.45rem !important;
+  gap: 0.45rem !important;
+}
+
+.screen-1366 .pos-product-card {
+  padding: 0.45rem !important;
+  min-height: 84px !important;
+  border-radius: 0.65rem !important;
+}
+
+.screen-1366 .pos-product-card h3 {
+  font-size: 0.75rem !important;
+  line-height: 1.15 !important;
+}
+
+.screen-1366 .pos-product-card span.opacity-50 {
+  font-size: 0.55rem !important;
+}
+
+.screen-1366 .pos-product-card span.font-black {
+  font-size: 0.88rem !important;
+}
+
+.screen-1366 .pos-product-card button {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+}
+
+.screen-1366 .pos-cart-panel {
+  width: 295px !important;
+  min-width: 295px !important;
+  border-radius: 0.85rem !important;
+}
+
+.screen-1366 .pos-cart-header {
+  padding: 0.45rem 0.65rem !important;
+}
+
+.screen-1366 .pos-cart-header h2 {
+  font-size: 0.82rem !important;
+}
+
+.screen-1366 .pos-cart-inputs {
+  padding: 0.35rem 0.5rem !important;
+  gap: 0.25rem !important;
+}
+
+.screen-1366 .pos-cart-inputs input {
+  font-size: 0.75rem !important;
+  padding-top: 0.25rem !important;
+  padding-bottom: 0.25rem !important;
+}
+
+.screen-1366 .pos-cart-inputs textarea {
+  font-size: 0.72rem !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0.25rem 0.45rem !important;
+}
+
+.screen-1366 .pos-order-type-selector {
+  padding: 0.15rem !important;
+  gap: 0.15rem !important;
+}
+
+.screen-1366 .pos-order-type-btn {
+  padding: 0.15rem 0.3rem !important;
+  font-size: 0.58rem !important;
+  min-width: unset !important;
+  border-radius: 0.45rem !important;
+}
+
+.screen-1366 .pos-order-type-btn svg {
+  width: 0.75rem !important;
+  height: 0.75rem !important;
+}
+
+.screen-1366 .pos-cart-items-list {
+  padding: 0.35rem 0.5rem !important;
+}
+
+.screen-1366 .pos-cart-item-row {
+  padding-bottom: 0.25rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.screen-1366 .pos-cart-item-row span {
+  font-size: 0.72rem !important;
+  line-height: 1.15 !important;
+}
+
+.screen-1366 .pos-cart-qty-input {
+  width: 2.15rem !important;
+  font-size: 0.75rem !important;
+  padding: 0.15rem 0.1rem !important;
+  border-radius: 0.4rem !important;
+}
+
+.screen-1366 .pos-checkout-section {
+  padding: 0.4rem 0.6rem !important;
+}
+
+.screen-1366 .pos-checkout-section label {
+  font-size: 0.65rem !important;
+  margin-bottom: 0.2rem !important;
+}
+
+.screen-1366 .pos-checkout-total {
+  font-size: 1.35rem !important;
+  line-height: 1 !important;
+}
+
+.screen-1366 .pos-cash-input {
+  width: 4.5rem !important;
+  padding: 0.15rem 0.35rem !important;
+  font-size: 0.75rem !important;
+}
+
+.screen-1366 .pos-cart-action-btn {
+  padding: 0.35rem 0.45rem !important;
+  font-size: 0.68rem !important;
+  border-radius: 0.55rem !important;
+}
+
+.screen-1366 .mesas-top-banner {
+  padding: 0.45rem 0.75rem !important;
+  margin-bottom: 0.4rem !important;
+  gap: 0.4rem !important;
+  border-radius: 0.75rem !important;
+}
+
+.screen-1366 .mesas-top-banner h2 {
+  font-size: 1rem !important;
+}
+
+.screen-1366 .mesas-direct-btn {
+  padding: 0.25rem 0.5rem !important;
+  font-size: 0.65rem !important;
+  border-radius: 0.55rem !important;
+}
+
+.screen-1366 .mesas-total-card {
+  padding: 0.25rem 0.6rem !important;
+  border-radius: 0.55rem !important;
+}
+
+.screen-1366 .mesas-total-card span {
+  font-size: 0.85rem !important;
+}
+
+.screen-1366 .mesas-grid {
+  gap: 0.45rem !important;
+}
+
+.screen-1366 .mesa-card {
+  padding: 0.45rem !important;
+  min-height: 72px !important;
+  border-radius: 0.65rem !important;
+}
+
+.screen-1366 .mesa-card-number {
+  font-size: 1.25rem !important;
+  margin-bottom: 0 !important;
+}
+
+.screen-1366 .mesa-indicator {
+  width: 0.65rem !important;
+  height: 0.65rem !important;
+  top: 0.35rem !important;
+  right: 0.35rem !important;
+}
+
+.screen-1366 .sales-metrics-grid {
+  gap: 0.4rem !important;
+}
+
+.screen-1366 .sales-metrics-grid > div {
+  padding: 0.4rem 0.5rem !important;
+  border-radius: 0.65rem !important;
+}
+
+.screen-1366 .sales-metrics-grid h3 {
+  font-size: 0.58rem !important;
+}
+
+.screen-1366 .sales-metrics-grid p {
+  font-size: 1.15rem !important;
+}
+
+.screen-1366 div:where(.swal2-container) div:where(.swal2-popup) {
+  font-size: 0.85rem !important;
+  padding: 1rem !important;
+}

@@ -7,11 +7,15 @@ import { CustomSelect } from './CustomSelect';
 export function MateriaPrimaView({ 
   rawMaterials, 
   onAddMaterial,
-  onDeleteMaterial
+  onDeleteMaterial,
+  currentBranchId,
+  currentBranchName
 }: { 
   rawMaterials: RawMaterial[], 
   onAddMaterial: (r: RawMaterial) => void,
-  onDeleteMaterial: (id: string) => void
+  onDeleteMaterial: (id: string) => void,
+  currentBranchId?: string,
+  currentBranchName?: string
 }) {
   const [formData, setFormData] = useState({
     name: '',
@@ -59,10 +63,12 @@ export function MateriaPrimaView({
     m.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const branchLabel = currentBranchName || (currentBranchId === '2' ? 'Sucursal 2 (San Rafael)' : 'Matriz (Armenia)');
+
   const handleDownloadPDF = () => {
     generateInventoryPDF({
-      title: 'Inventario de Materias Primas',
-      filename: 'materias_primas',
+      title: `Inventario de Materias Primas - ${branchLabel}`,
+      filename: `materias_primas_${currentBranchId === '2' ? 'sucursal2' : 'matriz'}`,
       columns: ['Nombre', 'Unidad', 'Costo Unit.', 'Stock', 'Costo Total'],
       data: filteredMaterials.map(m => [
         m.name,
@@ -85,7 +91,12 @@ export function MateriaPrimaView({
             </div>
             <div>
               <h2 className="text-xl font-black italic uppercase">{editingId ? 'Editar Ingrediente' : 'Materia Prima'}</h2>
-              <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Ingrediente' : 'Ingreso de Ingredientes'}</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] font-bold uppercase opacity-50">{editingId ? 'Editar Ingrediente' : 'Ingreso de Ingredientes'}</span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                  📍 {branchLabel}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -160,7 +171,12 @@ export function MateriaPrimaView({
       {/* Right List */}
       <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
-           <h2 className="font-black uppercase tracking-widest italic shrink-0">Inventario Materias Primas</h2>
+           <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
+             Inventario Materias Primas
+             <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-400/20 border border-amber-400 text-amber-200">
+               {branchLabel}
+             </span>
+           </h2>
            <div className="flex gap-2 w-full lg:w-auto">
              <div className="relative flex-1 lg:w-64">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />

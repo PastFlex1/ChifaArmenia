@@ -66,7 +66,9 @@ export interface RawMaterial {
   id: string;
   name: string;
   unit: string;
-  stock: number;
+  stock: number; // Stock principal (Matriz / Sucursal 1)
+  stocks?: Record<string, number>; // Stock por sucursal: { '1': number, '2': number }
+  stock_sucursal2?: number; // Stock específico para Sucursal 2 (San Rafael)
   unitCost: number;
 }
 
@@ -88,8 +90,30 @@ export interface Drink {
   name: string;
   category: Category;
   price: number;
-  stock: number;
+  stock: number; // Stock principal (Matriz / Sucursal 1)
+  stocks?: Record<string, number>; // Stock por sucursal: { '1': number, '2': number }
+  stock_sucursal2?: number; // Stock específico para Sucursal 2 (San Rafael)
   unitCost: number;
+}
+
+// Función utilitaria para resolver el stock de cualquier producto según la sucursal
+export function getStockForBranch(
+  item: { stock?: number; stocks?: Record<string, number>; stock_sucursal2?: number },
+  branchId: string = '1'
+): number {
+  if (!item) return 0;
+  if (item.stocks && typeof item.stocks[branchId] === 'number') {
+    return item.stocks[branchId];
+  }
+  if (branchId === '2') {
+    if (typeof item.stock_sucursal2 === 'number') {
+      return item.stock_sucursal2;
+    }
+    // Si no se ha registrado stock en Sucursal 2, arranca en 0
+    return 0;
+  }
+  // Matriz (Sucursal 1) toma el stock principal histórico
+  return typeof item.stock === 'number' ? item.stock : 0;
 }
 
 export interface ComboItem {
