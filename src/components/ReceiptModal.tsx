@@ -418,10 +418,10 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 </div>
 
                 <div className="mt-8 pt-4 border-t-2 border-black text-center">
-                    {order.notes && (
+                    {order.notes && typeof order.notes === 'string' && order.notes.trim().length > 0 && (
                       <div className="mb-4 text-left bg-amber-50 border-2 border-black rounded p-2">
                         <p className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-60">📝 Observaciones:</p>
-                        <p className="text-sm font-black uppercase leading-snug">{order.notes}</p>
+                        <p className="text-sm font-black uppercase leading-snug">{order.notes.trim()}</p>
                       </div>
                     )}
                     <p className="font-black text-lg uppercase tracking-widest italic opacity-50">FIN DE COMANDA</p>

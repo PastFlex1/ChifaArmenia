@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
-import { CupSoda, Plus, Trash2, Edit2, Search, X, Download } from 'lucide-react';
+import { CupSoda, Plus, Trash2, Edit2, Search, X, Download, Copy } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
-import { Drink, Category } from '../types';
+import { Drink, Category, getStockForBranch } from '../types';
 
 export function DrinkInventoryView({ 
   drinks, 
   onAddDrink,
   onDeleteDrink,
-  currentBranchId,
-  currentBranchName
+  currentBranchId = '1',
+  currentBranchName,
+  onSwitchBranch,
+  onCopyStockFromMatriz
 }: { 
   drinks: Drink[], 
   onAddDrink: (d: Drink) => void,
   onDeleteDrink: (id: string) => void,
   currentBranchId?: string,
-  currentBranchName?: string
+  currentBranchName?: string,
+  onSwitchBranch?: (branch: '1' | '2') => void,
+  onCopyStockFromMatriz?: () => void
 }) {
   const [formData, setFormData] = useState<{
     name: string;
@@ -51,9 +55,10 @@ export function DrinkInventoryView({
 
   const handleEdit = (item: Drink) => {
     setEditingId(item.id);
+    const branchStock = getStockForBranch(item, currentBranchId);
     setFormData({
       name: item.name,
-      stock: item.stock.toString(),
+      stock: branchStock.toString(),
       unitCost: item.unitCost.toString(),
       price: item.price.toString(),
       category: (item.category === 'Bebidas Calientes' || item.category === 'Licor' || item.category === 'Jugos' || item.category === 'Bebidas') ? item.category : 'Licor'
@@ -78,13 +83,16 @@ export function DrinkInventoryView({
       title: `Inventario de Bebidas - ${branchLabel}`,
       filename: `bebidas_${currentBranchId === '2' ? 'sucursal2' : 'matriz'}`,
       columns: ['Nombre', 'Categoría', 'Costo', 'Precio', 'Stock'],
-      data: filteredDrinks.map(d => [
-        d.name,
-        d.category,
-        `$${d.unitCost.toFixed(2)}`,
-        `$${d.price.toFixed(2)}`,
-        d.stock.toString()
-      ])
+      data: filteredDrinks.map(d => {
+        const s = getStockForBranch(d, currentBranchId);
+        return [
+          d.name,
+          d.category,
+          `$${d.unitCost.toFixed(2)}`,
+          `$${d.price.toFixed(2)}`,
+          s.toString()
+        ];
+      })
     });
   };
 
@@ -133,10 +141,12 @@ export function DrinkInventoryView({
             </div>
             
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-black uppercase opacity-60">Cantidad (Stock)</label>
+              <label className="text-xs font-black uppercase opacity-60">
+                Cantidad (Stock {currentBranchId === '2' ? 'San Rafael' : 'Matriz'})
+              </label>
               <input 
                 type="number" step="1" min="0" required placeholder="0" value={formData.stock}
-                onChange={e => setFormData({ ...formData, stock: e.target.value })}
+                onChange={e => setFormData({ ...formData, stock: e.target.value.replace(/[^0-9]/g, '') })}
                 className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors"
               />
             </div>
@@ -163,7 +173,7 @@ export function DrinkInventoryView({
             <div className="flex flex-col gap-2 mt-4">
               <button type="submit" className="flex items-center justify-center gap-2 py-4 bg-blue-600 text-white border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
                 {editingId ? <Edit2 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                {editingId ? 'Actualizar Bebida' : 'Añadir Bebida'}
+                {editingId ? `Guardar en ${currentBranchId === '2' ? 'San Rafael' : 'Matriz'}` : `Añadir a ${currentBranchId === '2' ? 'San Rafael' : 'Matriz'}`}
               </button>
               {editingId && (
                 <button type="button" onClick={cancelEdit} className="bg-white border-2 border-black text-black py-4 font-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-slate-50 transition-colors uppercase flex items-center justify-center gap-2">
@@ -177,12 +187,47 @@ export function DrinkInventoryView({
       {/* Right List */}
       <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
-           <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
-             Inventario Bebidas
-             <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400 text-blue-200">
-               {branchLabel}
-             </span>
-           </h2>
+           <div className="flex flex-wrap items-center gap-3">
+             <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
+               Inventario Bebidas
+             </h2>
+             {onSwitchBranch && (
+               <div className="flex gap-1 bg-slate-800 p-1 rounded-xl border border-white/20">
+                 <button
+                   type="button"
+                   onClick={() => onSwitchBranch('1')}
+                   className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
+                     currentBranchId === '1'
+                       ? 'bg-blue-500 text-white shadow-sm'
+                       : 'text-slate-300 hover:text-white'
+                   }`}
+                 >
+                   📍 Matriz
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => onSwitchBranch('2')}
+                   className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
+                     currentBranchId === '2'
+                       ? 'bg-blue-500 text-white shadow-sm'
+                       : 'text-slate-300 hover:text-white'
+                   }`}
+                 >
+                   📍 San Rafael
+                 </button>
+               </div>
+             )}
+             {onCopyStockFromMatriz && currentBranchId === '2' && (
+               <button
+                 type="button"
+                 onClick={onCopyStockFromMatriz}
+                 className="bg-blue-400 hover:bg-blue-300 text-black px-2.5 py-1 rounded-lg font-black uppercase text-[11px] transition-all flex items-center gap-1 shadow-sm active:translate-y-[1px]"
+                 title="Copiar stocks de Matriz como base inicial para San Rafael"
+               >
+                 <Copy className="w-3.5 h-3.5" /> Copiar Base de Matriz
+               </button>
+             )}
+           </div>
            <div className="flex gap-2 w-full lg:w-auto">
              <div className="relative flex-1 lg:w-64">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
@@ -211,38 +256,48 @@ export function DrinkInventoryView({
              </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 h-max content-start">
-              {filteredDrinks.map((item) => (
-                <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
-                   <div className="flex justify-between items-start">
-                     <div>
-                       <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
-                       <span className="text-[10px] font-bold text-blue-600 uppercase border border-blue-600 px-1 rounded">{item.category}</span>
+              {filteredDrinks.map((item) => {
+                const currentStock = getStockForBranch(item, currentBranchId);
+                const matrizStock = getStockForBranch(item, '1');
+                const suc2Stock = getStockForBranch(item, '2');
+
+                return (
+                  <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
+                     <div className="flex justify-between items-start">
+                       <div>
+                         <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
+                         <span className="text-[10px] font-bold text-blue-600 uppercase border border-blue-600 px-1 rounded">{item.category}</span>
+                       </div>
+                       <div className="flex gap-2 shrink-0 ml-2">
+                         <button onClick={() => handleEdit(item)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none" title="Editar stock para esta sucursal">
+                            <Edit2 className="w-4 h-4" />
+                         </button>
+                         <button onClick={() => onDeleteDrink(item.id)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-[#B91C1C] hover:bg-red-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
+                            <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
                      </div>
-                     <div className="flex gap-2 shrink-0 ml-2">
-                       <button onClick={() => handleEdit(item)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
-                          <Edit2 className="w-4 h-4" />
-                       </button>
-                       <button onClick={() => onDeleteDrink(item.id)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-[#B91C1C] hover:bg-red-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
-                          <Trash2 className="w-4 h-4" />
-                       </button>
+                     <div className="grid grid-cols-3 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
+                       <div>
+                         <span className="block text-[10px] uppercase font-bold text-blue-700">Stock {currentBranchId === '2' ? 'San Rafael' : 'Matriz'}</span>
+                         <span className="font-black text-lg text-black">{currentStock} <span className="text-sm opacity-60">u</span></span>
+                       </div>
+                       <div>
+                         <span className="block text-[10px] uppercase font-bold opacity-50">Costo</span>
+                         <span className="font-black text-sm block mt-1 text-slate-600">{formatPrice(item.unitCost)}</span>
+                       </div>
+                       <div>
+                         <span className="block text-[10px] uppercase font-bold opacity-50">Precio Venta</span>
+                         <span className="font-black text-sm block mt-1 text-[#B91C1C]">{formatPrice(item.price)}</span>
+                       </div>
                      </div>
-                   </div>
-                   <div className="grid grid-cols-3 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
-                     <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Stock</span>
-                       <span className="font-black text-lg">{item.stock} <span className="text-sm opacity-60">u</span></span>
+                     <div className="bg-slate-100 p-2 rounded-lg border border-slate-300 text-[10px] font-bold flex justify-between items-center text-slate-700">
+                       <span>📍 Matriz: <strong className={currentBranchId === '1' ? 'text-blue-700' : 'text-black'}>{matrizStock} u</strong></span>
+                       <span>📍 San Rafael: <strong className={currentBranchId === '2' ? 'text-blue-700' : 'text-black'}>{suc2Stock} u</strong></span>
                      </div>
-                     <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Costo</span>
-                       <span className="font-black text-lg block mt-1 text-slate-600">{formatPrice(item.unitCost)}</span>
-                     </div>
-                     <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Precio Venta</span>
-                       <span className="font-black text-lg block mt-1 text-[#B91C1C]">{formatPrice(item.price)}</span>
-                     </div>
-                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

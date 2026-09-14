@@ -14,7 +14,7 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, SyncState, LatencyStatus } from './utils/syncManager';
 
@@ -74,8 +74,101 @@ export default function App() {
   const [isHolidayIva, setIsHolidayIva] = useState<boolean>(false);
   const [cashReceived, setCashReceived] = useState<string>('');
 
-  const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-  const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
+  const [terminalBranchId, setTerminalBranchId] = useState<'1' | '2'>(() => {
+    return (localStorage.getItem('chifa_pos_terminal_branch') as '1' | '2') || '1';
+  });
+
+  const currentBranchId: '1' | '2' = (currentUser?.branchId === '2' || currentUser?.cedula === '1714851332001')
+    ? '2'
+    : (currentUser?.branchId === '1' ? '1' : (terminalBranchId || '1'));
+
+  const currentBranchName = currentBranchId === '2' ? 'San Rafael' : 'Armenia';
+
+  useEffect(() => {
+    if (currentUser?.branchId === '1' || currentUser?.branchId === '2') {
+      setTerminalBranchId(currentUser.branchId);
+      localStorage.setItem('chifa_pos_terminal_branch', currentUser.branchId);
+    }
+  }, [currentUser]);
+
+  const handleSwitchBranch = (newBranch: '1' | '2') => {
+    setTerminalBranchId(newBranch);
+    localStorage.setItem('chifa_pos_terminal_branch', newBranch);
+    if (currentUser && currentUser.role === 'Administrador') {
+      setCurrentUser({
+        ...currentUser,
+        branchId: newBranch,
+        branchName: newBranch === '2' ? 'Sucursal 2' : 'Matriz'
+      });
+    }
+    setCart([]);
+    setActiveTableId(null);
+    setTableNumber('');
+    setCustomerName('');
+    setOrderNotes('');
+  };
+
+  const handleCopyStockToBranch2 = async (type: 'materials' | 'drinks') => {
+    const isMaterial = type === 'materials';
+    const label = isMaterial ? 'Materias Primas' : 'Bebidas';
+    const result = await Swal.fire({
+      title: `¿Copiar ${label} de Matriz a San Rafael?`,
+      text: `Esto inicializará el stock de San Rafael con los valores actuales de Matriz como punto de partida base. Luego podrás ajustar o modificar las cantidades de forma 100% independiente.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, copiar base',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#B91C1C'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const batch = writeBatch(db);
+      if (isMaterial) {
+        rawMaterials.forEach(rm => {
+          const matrizStock = getStockForBranch(rm, '1');
+          const ref = doc(db, 'rawMaterials', rm.id);
+          const currentStocks = rm.stocks || {};
+          batch.update(ref, {
+            stock_sucursal2: matrizStock,
+            stocks: {
+              ...currentStocks,
+              '2': matrizStock
+            }
+          });
+        });
+      } else {
+        drinks.forEach(dr => {
+          const matrizStock = getStockForBranch(dr, '1');
+          const ref = doc(db, 'drinks', dr.id);
+          const currentStocks = dr.stocks || {};
+          batch.update(ref, {
+            stock_sucursal2: matrizStock,
+            stocks: {
+              ...currentStocks,
+              '2': matrizStock
+            }
+          });
+        });
+      }
+      await batch.commit();
+      Swal.fire({
+        title: '¡Stock Inicializado!',
+        text: `Se asignó el stock base de Matriz a San Rafael para ${label}. Ahora puedes modificar cualquiera de las dos sucursales de forma totalmente separada.`,
+        icon: 'success',
+        confirmButtonColor: '#000'
+      });
+    } catch (err: any) {
+      console.error(err);
+      Swal.fire({
+        title: 'Error',
+        text: `Error al copiar el stock: ${err.message}`,
+        icon: 'error',
+        confirmButtonColor: '#B91C1C'
+      });
+    }
+  };
 
   // Inventories State
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
@@ -330,12 +423,12 @@ export default function App() {
 
     if (timeRange === 'day') {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      startOfDay.setHours(0, 0, 0, 0);
       qOrders = query(collection(db, 'orders'), where('date', '>=', startOfDay.toISOString()));
     } else if (timeRange === 'week') {
-      const currentDay = now.getDay();
-      const daysToMonday = currentDay === 0 ? 6 : currentDay - 1;
-      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
-      qOrders = query(collection(db, 'orders'), where('date', '>=', startOfWeek.toISOString()));
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      qOrders = query(collection(db, 'orders'), where('date', '>=', sevenDaysAgo.toISOString()));
     } else if (timeRange === 'year') {
       const startOfYear = new Date(now.getFullYear(), 0, 1);
       qOrders = query(collection(db, 'orders'), where('date', '>=', startOfYear.toISOString()));
@@ -361,50 +454,64 @@ export default function App() {
       }
     }
 
-    const unsubOrders = onSnapshot(qOrders, snapshot => {
-      const fetchedOrders = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Order));
+    const processOrdersSnapshot = (snapshot: any, isRealtime: boolean) => {
+      const fetchedOrders = snapshot.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as Order));
 
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'added') {
-          const order = change.doc.data() as Order;
-          const orderBranch = order.branchId || '1';
-          const normT = (order.tableNumber || '').trim().toLowerCase();
-          if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
-            const orderTime = new Date(order.date).getTime();
-            markTableAsFreed(order.tableNumber, orderTime, orderBranch);
-            const localKey = `${orderBranch}_${normT}`;
-            const localTime = locallyProcessedTablesRef.current.get(localKey);
-            const isLocal = localTime && Date.now() - localTime < 15000;
-            if (!isLocal && orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
-              setCart([]);
-              setActiveTableId(null);
-              setTableNumber('');
-              if (currentView === 'pos') {
-                setCurrentView('mesas');
+      if (isRealtime && typeof snapshot.docChanges === 'function') {
+        snapshot.docChanges().forEach((change: any) => {
+          if (change.type === 'added') {
+            const order = change.doc.data() as Order;
+            const orderBranch = order.branchId || '1';
+            const normT = (order.tableNumber || '').trim().toLowerCase();
+            if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
+              const orderTime = new Date(order.date).getTime();
+              markTableAsFreed(order.tableNumber, orderTime, orderBranch);
+              const localKey = `${orderBranch}_${normT}`;
+              const localTime = locallyProcessedTablesRef.current.get(localKey);
+              const isLocal = localTime && Date.now() - localTime < 15000;
+              if (!isLocal && orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
+                setCart([]);
+                setActiveTableId(null);
+                setTableNumber('');
+                if (currentView === 'pos') {
+                  setCurrentView('mesas');
+                }
               }
             }
           }
-        }
-      });
+        });
+      }
 
       purgeDraftsForCompletedOrders(fetchedOrders, currentBranchId);
       setOrders(fetchedOrders);
-    }, (error) => {
-      console.error("Error fetching orders:", error);
-    });
+    };
 
-    return () => unsubOrders();
+    if (timeRange === 'day') {
+      const unsubOrders = onSnapshot(qOrders, snapshot => {
+        processOrdersSnapshot(snapshot, true);
+      }, (error) => {
+        console.error("Error fetching orders:", error);
+      });
+      return () => unsubOrders();
+    } else {
+      getDocs(qOrders).then(snapshot => {
+        processOrdersSnapshot(snapshot, false);
+      }).catch(error => {
+        console.error("Error fetching historical orders:", error);
+      });
+      return () => {};
+    }
   }, [timeRange, customDateRange, currentBranchId]);
 
   // Purga continua y automática de localStorage para mesas cobradas
   useEffect(() => {
     const runPurge = () => {
       if (orders && orders.length > 0) {
-        purgeDraftsForCompletedOrders(orders, currentBranchId);
+        purgeDraftsForCompletedOrders(orders.slice(-50), currentBranchId);
       }
     };
     runPurge();
-    const timer = setInterval(runPurge, 3000);
+    const timer = setInterval(runPurge, 5000);
     return () => clearInterval(timer);
   }, [orders, currentBranchId]);
 
@@ -675,9 +782,13 @@ export default function App() {
     const firestoreTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber.trim().toLowerCase() === norm);
 
     const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
+    const loadedNotes = localDraft?.notes || firestoreTable?.notes || '';
+    const loadedCustomer = localDraft?.customerName || firestoreTable?.customerName || '';
 
     setCart(loadedItems);
     setTableNumber(tNumber);
+    setOrderNotes(loadedNotes);
+    setCustomerName(loadedCustomer);
     if (isSpecialType && !firestoreTable && !localDraft) {
       setActiveTableId(null);
     } else {
@@ -834,10 +945,16 @@ export default function App() {
     if (itemsToSave.length === 0 || isCheckingOut) return;
     setIsCheckingOut(true);
 
-    const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
-
-    const tableOrder = saveLocalDraft(targetTable, itemsToSave, currentUser?.id, currentUser?.name, currentBranchId, currentBranchName);
+    const tableOrder = saveLocalDraft(
+      targetTable, 
+      itemsToSave, 
+      currentUser?.id, 
+      currentUser?.name, 
+      currentBranchId, 
+      currentBranchName,
+      orderNotes.trim() || undefined,
+      customerName.trim() || undefined
+    );
 
     try {
       if (latencyInfo.isOnline && latencyInfo.isFast) {
@@ -848,6 +965,8 @@ export default function App() {
       }
       setCart([]);
       setTableNumber('');
+      setCustomerName('');
+      setOrderNotes('');
       setActiveTableId(null);
       setCurrentView('mesas');
     } catch (e) {
@@ -1135,8 +1254,6 @@ export default function App() {
   const handlePrintPreview = () => {
     if (cart.length === 0) return;
     const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
-    const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-    const currentBranchName = currentUser?.branchName || (currentBranchId === '2' ? 'Sucursal 2' : 'Matriz');
 
     const mockOrder: Order = {
       id: 'preview-' + Date.now(),
@@ -1298,7 +1415,19 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <LoginView users={users} onLogin={(u) => { setCurrentUser(u); setShowWelcome(true); }} />;
+    return (
+      <LoginView 
+        users={users} 
+        onLogin={(u) => { 
+          setCurrentUser(u); 
+          setShowWelcome(true); 
+          if (u.branchId === '1' || u.branchId === '2') {
+            setTerminalBranchId(u.branchId as '1' | '2');
+            localStorage.setItem('chifa_pos_terminal_branch', u.branchId);
+          }
+        }} 
+      />
+    );
   }
 
   const canView = (view: string) => {
@@ -1317,10 +1446,12 @@ export default function App() {
         <div className="pos-brand-card bg-[#B91C1C] text-white p-3 2xl:p-4 rounded-2xl flex flex-col justify-between border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden shrink-0">
           <div className="flex flex-col z-10">
             <span className="text-[10px] 2xl:text-xs font-bold uppercase tracking-widest opacity-80 mb-0.5">Restaurante</span>
-            <h1 className="text-2xl 2xl:text-3xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
-            <span className="text-[#FFD700] font-black uppercase tracking-widest text-[11px] 2xl:text-xs mt-1">
-              📍 {(currentBranchId === '2' || currentUser?.branchName === 'Sucursal 2' || currentUser?.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
-            </span>
+            <h1 className="text-xl 2xl:text-2xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
+            <div className="mt-2">
+              <span className="inline-flex items-center gap-1 bg-[#FFD700] text-black text-[11px] 2xl:text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
+              </span>
+            </div>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
             <ChefHat className="w-28 h-28 2xl:w-32 2xl:h-32 text-white" />
@@ -1342,6 +1473,8 @@ export default function App() {
               onClick={() => {
                 setActiveTableId(null);
                 setTableNumber('');
+                setCustomerName('');
+                setOrderNotes('');
                 setCart([]);
                 setCurrentView('pos');
               }}
@@ -1449,9 +1582,11 @@ export default function App() {
       <div className="lg:hidden flex flex-col shrink-0 gap-3 z-20 w-full absolute top-0 left-0 right-0 p-3 bg-[#F7F4F0]">
         <div className="bg-[#B91C1C] text-white p-3 rounded-xl flex justify-between items-center border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden">
           <div className="flex flex-col z-10">
-            <h1 className="text-xl font-black italic uppercase leading-none">Chifa Mei Hua</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[#FFD700] text-[10px] font-black uppercase tracking-widest">Sistema {currentUser.role}</span>
+            <h1 className="text-lg font-black italic uppercase leading-tight">Chifa Mei Hua</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[#FFD700] text-[11px] font-black uppercase tracking-wider">
+                📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
+              </span>
               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border border-black uppercase flex items-center gap-1 ${isOnline ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black animate-pulse'
                 }`}>
                 {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
@@ -1459,9 +1594,11 @@ export default function App() {
               </span>
             </div>
           </div>
-          <button type="button" onClick={() => setShowLogoutConfirm(true)} className="z-20 bg-black/30 p-3 rounded-lg text-white hover:text-[#FFD700] transition-colors cursor-pointer active:bg-black/50">
-            <LogOut className="w-5 h-5 pointer-events-none" />
-          </button>
+          <div className="flex items-center gap-2 z-20">
+            <button type="button" onClick={() => setShowLogoutConfirm(true)} className="bg-black/30 p-2.5 rounded-lg text-white hover:text-[#FFD700] transition-colors cursor-pointer active:bg-black/50">
+              <LogOut className="w-4 h-4 pointer-events-none" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1577,9 +1714,11 @@ export default function App() {
             />
           ) : currentView === 'materia_prima' ? (
             <MateriaPrimaView
-              rawMaterials={branchRawMaterials}
+              rawMaterials={rawMaterials}
               currentBranchId={currentBranchId}
               currentBranchName={currentBranchName}
+              onSwitchBranch={undefined}
+              onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('materials') : undefined}
               onAddMaterial={async (m) => {
                 const existing = rawMaterials.find(rm => rm.id === m.id);
                 const existingStocks = existing?.stocks || {};
@@ -1597,14 +1736,10 @@ export default function App() {
 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  if (existing) {
-                    payload.stock = existing.stock ?? 0;
-                  }
+                  payload.stock = existing ? (existing.stock ?? 0) : 0;
                 } else {
                   payload.stock = inputStock;
-                  if (existing && existing.stock_sucursal2 !== undefined) {
-                    payload.stock_sucursal2 = existing.stock_sucursal2;
-                  }
+                  payload.stock_sucursal2 = existing ? (existing.stock_sucursal2 ?? 0) : 0;
                 }
 
                 await setDoc(doc(db, 'rawMaterials', m.id), payload, { merge: true });
@@ -1628,6 +1763,7 @@ export default function App() {
               orders={orders}
               users={users}
               currentUser={currentUser}
+              currentBranchId={currentBranchId}
               onViewReceipt={(order) => setCompletedOrder(order)}
               onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}
               onVoidOrder={handleVoidOrder}
@@ -1687,9 +1823,11 @@ export default function App() {
             />
           ) : (
             <DrinkInventoryView
-              drinks={branchDrinks}
+              drinks={drinks}
               currentBranchId={currentBranchId}
               currentBranchName={currentBranchName}
+              onSwitchBranch={undefined}
+              onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('drinks') : undefined}
               onAddDrink={async (d) => {
                 const existing = drinks.find(dr => dr.id === d.id);
                 const existingStocks = existing?.stocks || {};
@@ -1707,14 +1845,10 @@ export default function App() {
 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  if (existing) {
-                    payload.stock = existing.stock ?? 0;
-                  }
+                  payload.stock = existing ? (existing.stock ?? 0) : 0;
                 } else {
                   payload.stock = inputStock;
-                  if (existing && existing.stock_sucursal2 !== undefined) {
-                    payload.stock_sucursal2 = existing.stock_sucursal2;
-                  }
+                  payload.stock_sucursal2 = existing ? (existing.stock_sucursal2 ?? 0) : 0;
                 }
 
                 await setDoc(doc(db, 'drinks', d.id), payload, { merge: true });
@@ -2367,6 +2501,8 @@ export default function App() {
                     setCurrentView('pos');
                     setCart([]);
                     setTableNumber('');
+                    setCustomerName('');
+                    setOrderNotes('');
                     setActiveTableId(null);
                   }}
                   className="flex-1 px-4 py-3 bg-[#B91C1C] border-2 border-black rounded-xl font-bold hover:bg-red-800 transition-colors text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)]"
@@ -2391,7 +2527,16 @@ export default function App() {
             const targetTable = (activeTableId || tableNumber).trim();
             const normTarget = targetTable.toLowerCase();
             if (normTarget && normTarget !== 'para llevar' && normTarget !== 'llevar' && normTarget !== 'domicilio' && completedOrder.id.startsWith('preview')) {
-              const tableOrder = saveLocalDraft(targetTable, newCart, currentUser?.id, currentUser?.name, currentBranchId, currentBranchName);
+              const tableOrder = saveLocalDraft(
+                targetTable, 
+                newCart, 
+                currentUser?.id, 
+                currentUser?.name, 
+                currentBranchId, 
+                currentBranchName,
+                orderNotes.trim() || undefined,
+                customerName.trim() || undefined
+              );
               if (latencyInfo.isOnline && latencyInfo.isFast) {
                 await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
               }

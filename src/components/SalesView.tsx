@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Order, UserAccount } from '../types';
 import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download, Bike, ShoppingBag, UtensilsCrossed } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -9,6 +9,7 @@ interface SalesViewProps {
   orders: Order[];
   users?: UserAccount[];
   currentUser: UserAccount | null;
+  currentBranchId?: '1' | '2';
   onViewReceipt: (order: Order) => void;
   onDeleteOrder?: (id: string) => void;
   onVoidOrder?: (id: string) => void;
@@ -18,14 +19,38 @@ interface SalesViewProps {
   setCustomDateRange: (range: { start: string; end: string }) => void;
 }
 
-export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDeleteOrder, onVoidOrder, timeRange, setTimeRange, customDateRange, setCustomDateRange }: SalesViewProps) {
-  const currentBranchId = currentUser?.branchId || (currentUser?.cedula === '1714851332001' ? '2' : '1');
-  const branchDisplayName = currentBranchId === '2' ? 'San Rafael' : 'Armenia';
-  const selectedBranch = currentBranchId;
+export function SalesView({ 
+  orders, 
+  users = [], 
+  currentUser, 
+  currentBranchId: propBranchId,
+  onViewReceipt, 
+  onDeleteOrder, 
+  onVoidOrder, 
+  timeRange, 
+  setTimeRange, 
+  customDateRange, 
+  setCustomDateRange 
+}: SalesViewProps) {
+  const activeBranch: '1' | '2' = propBranchId || (currentUser?.branchId as '1' | '2') || (currentUser?.cedula === '1714851332001' ? '2' : '1');
+
+  // Cada perfil muestra estrictamente las ventas de su propia sucursal
+  const branchOrders = useMemo(() => {
+    return orders.filter(o => {
+      const isSanRafael = (o.branchId === '2' || o.branchName === 'Sucursal 2' || o.branchName === 'San Rafael');
+      return activeBranch === '2' ? isSanRafael : !isSanRafael;
+    });
+  }, [orders, activeBranch]);
 
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
   const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
+  const [visibleCount, setVisibleCount] = useState<number>(40);
+
+  // Reset de paginación al cambiar cualquier filtro
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [timeRange, selectedSeller, selectedOrderType, customDateRange, activeBranch]);
 
   const handleVoidOrderConfirm = async (orderId: string) => {
     const result = await Swal.fire({
@@ -79,17 +104,13 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     }
   };
 
-  // Obtener los trabajadores de esta sucursal (Armenia o San Rafael)
+  // Obtener los trabajadores según la sucursal del perfil
   const branchWorkers = useMemo(() => {
     return (users || []).filter(user => {
-      if (currentBranchId === '2') {
-        return user.id === '2' || user.cedula === '1714851332001' || user.branchId === '2';
-      } else {
-        if (user.id === '2' || user.cedula === '1714851332001' || user.branchId === '2') return false;
-        return user.id === '1' || (user.branchId || '1') === '1';
-      }
+      const isSanRafael = user.id === '2' || user.cedula === '1714851332001' || user.branchId === '2';
+      return activeBranch === '2' ? isSanRafael : !isSanRafael;
     });
-  }, [users, currentBranchId]);
+  }, [users, activeBranch]);
 
   const sellers = useMemo(() => {
     const list = new Map<string, string>();
@@ -102,14 +123,8 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     });
 
     // 2. Incluir vendedores que figuren en órdenes de esta sucursal
-    orders.forEach(o => {
-      if ((o.branchId || '1') !== currentBranchId) return;
+    branchOrders.forEach(o => {
       if (o.sellerId && o.sellerName) {
-        const otherUser = (users || []).find(u => u.id === o.sellerId || u.name?.trim().toLowerCase() === o.sellerName?.trim().toLowerCase());
-        if (otherUser) {
-          const uBranch = otherUser.branchId || (otherUser.id === '2' || otherUser.cedula === '1714851332001' ? '2' : '1');
-          if (uBranch !== currentBranchId) return;
-        }
         if (!list.has(o.sellerId)) {
           list.set(o.sellerId, o.sellerName.trim());
         }
@@ -117,13 +132,10 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     });
 
     return Array.from(list.entries()).map(([id, name]) => ({ id, name }));
-  }, [branchWorkers, orders, currentBranchId, users]);
+  }, [branchWorkers, branchOrders]);
 
   const filteredOrders = useMemo(() => {
-    let filtered = orders;
-    
-    // Filtrar estrictamente por la sucursal activa (Armenia o San Rafael)
-    filtered = filtered.filter(o => (o.branchId || '1') === selectedBranch);
+    let filtered = branchOrders;
 
     if (selectedSeller !== 'all') {
       const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
@@ -136,18 +148,25 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     }
 
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const currentDay = now.getDay();
-    const daysToMonday = currentDay === 0 ? 6 : currentDay - 1;
-    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday).getTime();
-    const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfDayMs = startOfDay.getTime();
+
+    // Rolling 7 días para 'week' (incluye hoy y los 6 días anteriores completos)
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const startOfWeekMs = sevenDaysAgo.getTime();
+
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    startOfYear.setHours(0, 0, 0, 0);
+    const startOfYearMs = startOfYear.getTime();
 
     if (timeRange === 'day') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfDay);
+      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfDayMs);
     } else if (timeRange === 'week') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfWeek);
+      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfWeekMs);
     } else if (timeRange === 'year') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfYear);
+      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfYearMs);
     } else if (timeRange === 'custom') {
       if (customDateRange.start && customDateRange.end) {
         const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
@@ -200,11 +219,19 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     }
 
     return filtered;
-  }, [orders, selectedSeller, selectedOrderType, timeRange, customDateRange]);
+  }, [branchOrders, selectedSeller, selectedOrderType, timeRange, customDateRange]);
 
   const formatPrice = (price: number) => `USD/ ${price.toFixed(2)}`;
 
   const validOrders = filteredOrders.filter(o => o.status !== 'voided');
+
+  const reversedOrders = useMemo(() => {
+    return filteredOrders.slice().reverse();
+  }, [filteredOrders]);
+
+  const visibleOrders = useMemo(() => {
+    return reversedOrders.slice(0, visibleCount);
+  }, [reversedOrders, visibleCount]);
 
   const orderTypeStats = useMemo(() => {
     let mesasCount = 0, mesasTotal = 0;
@@ -213,10 +240,9 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     let rappiCount = 0, rappiTotal = 0;
     let uberCount = 0, uberTotal = 0;
 
-    // Calcular estadísticas globales con base en la lista filtrada de tiempo/vendedor/sucursal
-    const activeNonVoided = orders.filter(o => {
+    // Calcular estadísticas globales con base en la lista de esta sucursal
+    const activeNonVoided = branchOrders.filter(o => {
       if (o.status === 'voided') return false;
-      if ((o.branchId || '1') !== selectedBranch) return false;
       if (selectedSeller !== 'all') {
         const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
         const selName = selectedSellerObj?.name?.trim().toLowerCase();
@@ -247,7 +273,7 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     });
 
     return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal };
-  }, [orders, selectedSeller, selectedBranch, sellers]);
+  }, [branchOrders, selectedSeller, sellers]);
 
   const totalRevenue = validOrders.reduce((sum, order) => sum + order.total, 0);
   const totalCost = validOrders.reduce((sum, order) => sum + order.totalCost, 0);
@@ -260,13 +286,15 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
     if (timeRange === 'week') {
-       ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].forEach(day => {
-         dataByDate.set(day, { label: day, Ingresos: 0, Ganancia: 0 });
-       });
+      for (let i = 6; i >= 0; i--) {
+        const pastDate = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const dayLabel = `${weekDays[pastDate.getDay()]} ${pastDate.getDate()}`;
+        dataByDate.set(dayLabel, { label: dayLabel, Ingresos: 0, Ganancia: 0 });
+      }
     } else if (timeRange === 'year') {
-       months.forEach(month => {
-         dataByDate.set(month, { label: month, Ingresos: 0, Ganancia: 0 });
-       });
+      months.forEach(month => {
+        dataByDate.set(month, { label: month, Ingresos: 0, Ganancia: 0 });
+      });
     }
 
     const sortedOrders = [...validOrders].sort((a, b) => a.date.localeCompare(b.date));
@@ -279,11 +307,11 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
          d.setMinutes(0, 0, 0);
          timeStr = d.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit' });
       } else if (timeRange === 'week') {
-         timeStr = weekDays[d.getDay()];
+         timeStr = `${weekDays[d.getDay()]} ${d.getDate()}`;
       } else if (timeRange === 'year') {
          timeStr = months[d.getMonth()];
       } else {
-         timeStr = d.toLocaleDateString('es-EC', { timeZone: 'America/Guayaquil', month: 'short', day: 'numeric', year: 'numeric' });
+         timeStr = `${months[d.getMonth()]} ${d.getFullYear()}`;
       }
 
       if (!dataByDate.has(timeStr)) {
@@ -295,7 +323,7 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
     });
 
     return Array.from(dataByDate.values());
-  }, [filteredOrders, timeRange, validOrders]);
+  }, [timeRange, validOrders]);
 
   const productSummary = useMemo(() => {
     const summary = new Map<string, { name: string, category: string, quantity: number, total: number }>();
@@ -339,18 +367,9 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
       {/* Filters (Organized Control Bar with Pill Buttons) */}
       <div className="shrink-0 flex flex-col gap-3 bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
         
-        {/* Row 1: Sucursal & Vendedor */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Sucursal */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
-            <span className="text-[10px] font-black uppercase text-slate-500 px-2">Sucursal:</span>
-            <span className="px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs bg-[#B91C1C] text-white shadow-none">
-              📍 {branchDisplayName}
-            </span>
-          </div>
-
-          {/* Vendedor (si es Administrador) */}
-          {currentUser?.role === 'Administrador' && (
+        {/* Row 1: Vendedor (si es Administrador) */}
+        {currentUser?.role === 'Administrador' && sellers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black overflow-x-auto scrollbar-hide">
               <span className="text-[10px] font-black uppercase text-slate-500 px-2 shrink-0">Vendedor:</span>
               <button
@@ -380,11 +399,11 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Row 2: Período de Tiempo & Canal */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t-2 border-slate-100">
+        <div className={`flex flex-wrap items-center gap-2 ${currentUser?.role === 'Administrador' && sellers.length > 0 ? 'pt-2 border-t-2 border-slate-100' : ''}`}>
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
             <span className="text-[10px] font-black uppercase text-slate-500 px-2">Período:</span>
             <button
@@ -644,9 +663,13 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 scrollbar-hide">
           {filteredOrders.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 opacity-30">
-              <FileText className="w-16 h-16 stroke-1" />
-              <p className="text-sm font-bold uppercase text-center">No hay ventas<br />registradas aún</p>
+            <div className="h-full flex flex-col items-center justify-center text-[#1A1A1A] gap-3 p-6 text-center">
+              <FileText className="w-16 h-16 stroke-1 opacity-30" />
+              <p className="text-sm font-bold uppercase opacity-60">
+                {branchOrders.length === 0
+                  ? `No hay ventas registradas aún en ${activeBranch === '2' ? 'San Rafael' : 'Armenia'}.`
+                  : 'No hay ventas registradas para los filtros seleccionados (período, vendedor o canal).'}
+              </p>
             </div>
           ) : viewMode === 'summary' ? (
             <div className="w-full">
@@ -673,7 +696,7 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
             </div>
           ) : viewMode === 'chart' ? (
             <div className="h-full min-h-[300px] w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="" vertical={false} stroke="#E5E7EB" />
                   <XAxis 
@@ -708,134 +731,148 @@ export function SalesView({ orders, users = [], currentUser, onViewReceipt, onDe
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredOrders.slice().reverse().map((order) => (
-                <div key={order.id} className={`bg-white border-2 border-black rounded-xl p-4 flex flex-col shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative ${order.status === 'voided' ? 'opacity-70 grayscale-[20%]' : ''}`}>
-                  
-                  {order.status === 'voided' && (
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 rotate-[-15deg] border-4 border-[#B91C1C] rounded-lg px-4 py-1 text-[#B91C1C] font-black uppercase text-2xl tracking-widest opacity-80 backdrop-blur-sm bg-white/50">
-                      Anulada
-                    </div>
-                  )}
-
-                  {/* Card Header */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#FFD700] border-2 border-black rounded-full flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                        <FileText className="w-5 h-5 text-[#1A1A1A]" />
-                      </div>
-                      <div>
-                        <h4 className="font-black text-sm uppercase">Pedido #{String(order.orderNumber).padStart(5, '0')}</h4>
-                        <p className="text-[10px] font-bold opacity-60">
-                          {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                       <p className={`text-lg font-black leading-none border-2 border-black px-2 py-1 rounded-lg ${order.status === 'voided' ? 'line-through bg-slate-200 text-slate-400' : 'bg-slate-100'}`}>{formatPrice(order.total)}</p>
-                    </div>
-                  </div>
-                  
-                  {/* Details Grid */}
-                  <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-bold mb-4 bg-slate-50 p-2 rounded-lg border-2 border-black/10">
-                    <div className="flex flex-col">
-                      <span className="opacity-60 uppercase text-[9px] tracking-widest">Items</span>
-                      <span>{order.items.length} productos</span>
-                    </div>
-                    {order.tableNumber && (
-                      <div className="flex flex-col">
-                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Tipo / Ubicación</span>
-                        {(() => {
-                          const norm = order.tableNumber.trim().toLowerCase();
-                          if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) {
-                            return (
-                              <span className="bg-red-100 text-[#B91C1C] border border-red-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
-                                <Bike className="w-3 h-3" /> PedidosYa
-                              </span>
-                            );
-                          }
-                          if (norm === 'rappi') {
-                            return (
-                              <span className="bg-orange-100 text-orange-800 border border-orange-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
-                                🧡 Rappi
-                              </span>
-                            );
-                          }
-                          if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) {
-                            return (
-                              <span className="bg-emerald-950 text-emerald-400 border border-emerald-700 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
-                                🟢 Uber Eats
-                              </span>
-                            );
-                          }
-                          if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') {
-                            return (
-                              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
-                                <ShoppingBag className="w-3 h-3" /> Llevar
-                              </span>
-                            );
-                          }
-                          return <span>Mesa {order.tableNumber}</span>;
-                        })()}
-                      </div>
-                    )}
-                    <div className="flex flex-col">
-                      <span className="opacity-60 uppercase text-[9px] tracking-widest">Sucursal</span>
-                      <span className="bg-slate-900 text-[#FFD700] rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max">
-                        📍 {(order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
-                      </span>
-                    </div>
-                    {order.customerName && (
-                      <div className="flex flex-col col-span-2">
-                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Cliente</span>
-                        <span className="truncate">{order.customerName}</span>
-                      </div>
-                    )}
-                    {order.sellerName && (
-                      <div className="flex flex-col col-span-2 mt-1">
-                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Mesero/Vendedor</span>
-                        <span className="truncate">{order.sellerName}</span>
-                      </div>
-                    )}
-                    <div className="flex flex-col col-span-2 mt-1 pt-2 border-t-2 border-dashed border-black/10">
-                      <span className={`uppercase text-[9px] tracking-widest ${order.status === 'voided' ? 'text-[#B91C1C]' : 'opacity-60'}`}>Ganancia Neta</span>
-                      <span className={`font-black ${order.status === 'voided' ? 'text-[#B91C1C] line-through opacity-50' : 'text-black'}`}>{formatPrice(order.profit)}</span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="mt-auto flex gap-2 relative z-20">
-                    <button 
-                      onClick={() => onViewReceipt(order)}
-                      className="flex-1 bg-[#1A1A1A] text-[#FFD700] py-3 rounded-xl font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-2 hover:bg-black transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
-                    >
-                      <Printer className="w-4 h-4 hidden sm:block" />
-                      Ver / Imprimir
-                    </button>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {visibleOrders.map((order) => (
+                  <div key={order.id} className={`bg-white border-2 border-black rounded-xl p-4 flex flex-col shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] relative ${order.status === 'voided' ? 'opacity-70 grayscale-[20%]' : ''}`}>
                     
-                    {order.status !== 'voided' && onVoidOrder && (
-                      <button 
-                        onClick={() => handleVoidOrderConfirm(order.id)}
-                        className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                        title="Anular orden y devolver inventario"
-                      >
-                        <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </button>
+                    {order.status === 'voided' && (
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 rotate-[-15deg] border-4 border-[#B91C1C] rounded-lg px-4 py-1 text-[#B91C1C] font-black uppercase text-2xl tracking-widest opacity-80 backdrop-blur-sm bg-white/50">
+                        Anulada
+                      </div>
                     )}
 
-                    {onDeleteOrder && (
+                    {/* Card Header */}
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#FFD700] border-2 border-black rounded-full flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                          <FileText className="w-5 h-5 text-[#1A1A1A]" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-sm uppercase">Pedido #{String(order.orderNumber).padStart(5, '0')}</h4>
+                          <p className="text-[10px] font-bold opacity-60">
+                            {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                         <p className={`text-lg font-black leading-none border-2 border-black px-2 py-1 rounded-lg ${order.status === 'voided' ? 'line-through bg-slate-200 text-slate-400' : 'bg-slate-100'}`}>{formatPrice(order.total)}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Details Grid */}
+                    <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-bold mb-4 bg-slate-50 p-2 rounded-lg border-2 border-black/10">
+                      <div className="flex flex-col">
+                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Items</span>
+                        <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} productos</span>
+                      </div>
+                      {order.tableNumber && (
+                        <div className="flex flex-col">
+                          <span className="opacity-60 uppercase text-[9px] tracking-widest">Tipo / Ubicación</span>
+                          {(() => {
+                            const norm = order.tableNumber.trim().toLowerCase();
+                            if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) {
+                              return (
+                                <span className="bg-red-100 text-[#B91C1C] border border-red-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                  <Bike className="w-3 h-3" /> PedidosYa
+                                </span>
+                              );
+                            }
+                            if (norm === 'rappi') {
+                              return (
+                                <span className="bg-orange-100 text-orange-800 border border-orange-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                  🧡 Rappi
+                                </span>
+                              );
+                            }
+                            if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) {
+                              return (
+                                <span className="bg-emerald-950 text-emerald-400 border border-emerald-700 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                  🟢 Uber Eats
+                                </span>
+                              );
+                            }
+                            if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') {
+                              return (
+                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                  <ShoppingBag className="w-3 h-3" /> Llevar
+                                </span>
+                              );
+                            }
+                            return <span>Mesa {order.tableNumber}</span>;
+                          })()}
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <span className="opacity-60 uppercase text-[9px] tracking-widest">Sucursal</span>
+                        <span className="bg-slate-900 text-[#FFD700] rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max">
+                          📍 {(order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael') ? 'San Rafael' : 'Armenia'}
+                        </span>
+                      </div>
+                      {order.customerName && (
+                        <div className="flex flex-col col-span-2">
+                          <span className="opacity-60 uppercase text-[9px] tracking-widest">Cliente</span>
+                          <span className="truncate">{order.customerName}</span>
+                        </div>
+                      )}
+                      {order.sellerName && (
+                        <div className="flex flex-col col-span-2 mt-1">
+                          <span className="opacity-60 uppercase text-[9px] tracking-widest">Mesero/Vendedor</span>
+                          <span className="truncate">{order.sellerName}</span>
+                        </div>
+                      )}
+                      <div className="flex flex-col col-span-2 mt-1 pt-2 border-t-2 border-dashed border-black/10">
+                        <span className={`uppercase text-[9px] tracking-widest ${order.status === 'voided' ? 'text-[#B91C1C]' : 'opacity-60'}`}>Ganancia Neta</span>
+                        <span className={`font-black ${order.status === 'voided' ? 'text-[#B91C1C] line-through opacity-50' : 'text-black'}`}>{formatPrice(order.profit)}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="mt-auto flex gap-2 relative z-20">
                       <button 
-                        onClick={() => handleDeleteOrderConfirm(order.id)}
-                        className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                        title="Eliminar orden permanentemente"
+                        onClick={() => onViewReceipt(order)}
+                        className="flex-1 bg-[#1A1A1A] text-[#FFD700] py-3 rounded-xl font-black text-[10px] sm:text-xs uppercase flex items-center justify-center gap-2 hover:bg-black transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-black"
                       >
-                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Printer className="w-4 h-4 hidden sm:block" />
+                        Ver / Imprimir
                       </button>
-                    )}
+                      
+                      {order.status !== 'voided' && onVoidOrder && (
+                        <button 
+                          onClick={() => handleVoidOrderConfirm(order.id)}
+                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
+                          title="Anular orden y devolver inventario"
+                        >
+                          <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                      )}
+
+                      {onDeleteOrder && (
+                        <button 
+                          onClick={() => handleDeleteOrderConfirm(order.id)}
+                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
+                          title="Eliminar orden permanentemente"
+                        >
+                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                      )}
+                    </div>
+                    
                   </div>
-                  
+                ))}
+              </div>
+
+              {visibleCount < reversedOrders.length && (
+                <div className="flex justify-center py-4">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount(prev => prev + 50)}
+                    className="px-6 py-3.5 bg-white hover:bg-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>Mostrar más ventas ({visibleOrders.length} de {reversedOrders.length})</span>
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>

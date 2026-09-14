@@ -185,6 +185,11 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
                         <span className="text-[10px] font-bold uppercase opacity-70 mt-0.5 flex items-center gap-1">
                           <Users className="w-3 h-3" /> {tableOrder.sellerName || 'Ocupada'}
                         </span>
+                        {tableOrder.notes && tableOrder.notes.trim() && (
+                          <span className="text-[9px] font-black text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 truncate max-w-[90%] mt-0.5" title={tableOrder.notes}>
+                            📝 {tableOrder.notes.trim()}
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs font-bold uppercase opacity-60 mt-2">Libre</span>
@@ -234,6 +239,11 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
                           <p className="flex items-center gap-1.5">
                             <ShoppingBag className="w-3.5 h-3.5" /> {itemCount} productos en orden
                           </p>
+                          {order.notes && order.notes.trim() && (
+                            <p className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 truncate" title={order.notes}>
+                              📝 {order.notes.trim()}
+                            </p>
+                          )}
                           {order.updatedAt && (
                             <p className="flex items-center gap-1.5 text-[10px] opacity-60">
                               <Clock className="w-3 h-3" /> {new Date(order.updatedAt).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false })}
@@ -338,6 +348,12 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
                           </div>
                         ))}
                       </div>
+                      {order.notes && order.notes.trim() && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-4 text-xs font-bold text-amber-900">
+                          <span className="text-[10px] font-black uppercase tracking-wider block text-amber-700 mb-0.5">📝 Observaciones:</span>
+                          <p className="leading-snug">{order.notes.trim()}</p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t-2 border-black/10">

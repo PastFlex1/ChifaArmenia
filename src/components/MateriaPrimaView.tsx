@@ -1,21 +1,25 @@
 import React, { useState } from 'react';
-import { Package, Plus, Trash2, Edit2, Search, X, Download } from 'lucide-react';
+import { Package, Plus, Trash2, Edit2, Search, X, Download, Copy, Building2 } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
-import { RawMaterial } from '../types';
+import { RawMaterial, getStockForBranch } from '../types';
 import { CustomSelect } from './CustomSelect';
 
 export function MateriaPrimaView({ 
   rawMaterials, 
   onAddMaterial,
   onDeleteMaterial,
-  currentBranchId,
-  currentBranchName
+  currentBranchId = '1',
+  currentBranchName,
+  onSwitchBranch,
+  onCopyStockFromMatriz
 }: { 
   rawMaterials: RawMaterial[], 
   onAddMaterial: (r: RawMaterial) => void,
   onDeleteMaterial: (id: string) => void,
   currentBranchId?: string,
-  currentBranchName?: string
+  currentBranchName?: string,
+  onSwitchBranch?: (branch: '1' | '2') => void,
+  onCopyStockFromMatriz?: () => void
 }) {
   const [formData, setFormData] = useState({
     name: '',
@@ -44,10 +48,11 @@ export function MateriaPrimaView({
 
   const handleEdit = (item: RawMaterial) => {
     setEditingId(item.id);
+    const branchStock = getStockForBranch(item, currentBranchId);
     setFormData({
       name: item.name,
       unit: item.unit,
-      stock: item.stock.toString(),
+      stock: branchStock.toString(),
       unitCost: item.unitCost.toString()
     });
   };
@@ -70,13 +75,16 @@ export function MateriaPrimaView({
       title: `Inventario de Materias Primas - ${branchLabel}`,
       filename: `materias_primas_${currentBranchId === '2' ? 'sucursal2' : 'matriz'}`,
       columns: ['Nombre', 'Unidad', 'Costo Unit.', 'Stock', 'Costo Total'],
-      data: filteredMaterials.map(m => [
-        m.name,
-        m.unit,
-        `$${m.unitCost.toFixed(2)}`,
-        m.stock.toString(),
-        `$${(m.stock * m.unitCost).toFixed(2)}`
-      ])
+      data: filteredMaterials.map(m => {
+        const s = getStockForBranch(m, currentBranchId);
+        return [
+          m.name,
+          m.unit,
+          `$${m.unitCost.toFixed(2)}`,
+          s.toString(),
+          `$${(s * m.unitCost).toFixed(2)}`
+        ];
+      })
     });
   };
 
@@ -126,7 +134,9 @@ export function MateriaPrimaView({
 
             <div className="flex gap-3">
               <div className="flex flex-col gap-1 flex-1">
-                <label className="text-xs font-black uppercase opacity-60">Cantidad (Stock)</label>
+                <label className="text-xs font-black uppercase opacity-60">
+                  Cantidad (Stock {currentBranchId === '2' ? 'San Rafael' : 'Matriz'})
+                </label>
                 <input 
                   type="number" 
                   step="1"
@@ -139,10 +149,10 @@ export function MateriaPrimaView({
                 />
               </div>
               <div className="flex flex-col gap-1 flex-1">
-                <label className="text-xs font-black uppercase opacity-60">Costo Unit.</label>
+                <label className="text-xs font-black uppercase opacity-60">Costo Unitario</label>
                 <input 
                   type="number" 
-                  step="0.01"
+                  step="0.01" 
                   min="0"
                   required
                   placeholder="0.00"
@@ -153,14 +163,21 @@ export function MateriaPrimaView({
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 mt-4">
-              <button type="submit" className="flex items-center justify-center gap-2 py-4 bg-[#B91C1C] text-white border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                {editingId ? <Edit2 className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                {editingId ? 'Actualizar Ingrediente' : 'Añadir Materia Prima'}
+            <div className="flex gap-3 mt-4">
+              <button 
+                type="submit" 
+                className="flex-1 py-3 bg-[#1A1A1A] text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all flex items-center justify-center gap-2"
+              >
+                {editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                {editingId ? `Guardar en ${currentBranchId === '2' ? 'San Rafael' : 'Matriz'}` : `Agregar a ${currentBranchId === '2' ? 'San Rafael' : 'Matriz'}`}
               </button>
               {editingId && (
-                <button type="button" onClick={cancelEdit} className="bg-white border-2 border-black text-black py-4 font-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-slate-50 transition-colors uppercase flex items-center justify-center gap-2">
-                  <X className="w-5 h-5" /> Cancelar
+                <button 
+                  type="button" 
+                  onClick={cancelEdit}
+                  className="px-4 py-3 bg-white border-2 border-black rounded-xl font-bold uppercase text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -171,12 +188,47 @@ export function MateriaPrimaView({
       {/* Right List */}
       <div className="shrink-0 xl:flex-1 min-h-[500px] xl:min-h-0 bg-white border-2 border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col overflow-hidden">
         <div className="bg-slate-900 text-white p-4 flex flex-col lg:flex-row justify-between items-center z-10 shrink-0 gap-4">
-           <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
-             Inventario Materias Primas
-             <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-400/20 border border-amber-400 text-amber-200">
-               {branchLabel}
-             </span>
-           </h2>
+           <div className="flex flex-wrap items-center gap-3">
+             <h2 className="font-black uppercase tracking-widest italic shrink-0 flex items-center gap-2">
+               Materias Primas
+             </h2>
+             {onSwitchBranch && (
+               <div className="flex gap-1 bg-slate-800 p-1 rounded-xl border border-white/20">
+                 <button
+                   type="button"
+                   onClick={() => onSwitchBranch('1')}
+                   className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
+                     currentBranchId === '1'
+                       ? 'bg-[#FFD700] text-black shadow-sm'
+                       : 'text-slate-300 hover:text-white'
+                   }`}
+                 >
+                   📍 Matriz
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => onSwitchBranch('2')}
+                   className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
+                     currentBranchId === '2'
+                       ? 'bg-[#FFD700] text-black shadow-sm'
+                       : 'text-slate-300 hover:text-white'
+                   }`}
+                 >
+                   📍 San Rafael
+                 </button>
+               </div>
+             )}
+             {onCopyStockFromMatriz && currentBranchId === '2' && (
+               <button
+                 type="button"
+                 onClick={onCopyStockFromMatriz}
+                 className="bg-amber-400 hover:bg-amber-300 text-black px-2.5 py-1 rounded-lg font-black uppercase text-[11px] transition-all flex items-center gap-1 shadow-sm active:translate-y-[1px]"
+                 title="Copiar stocks de Matriz como base inicial para San Rafael"
+               >
+                 <Copy className="w-3.5 h-3.5" /> Copiar Base de Matriz
+               </button>
+             )}
+           </div>
            <div className="flex gap-2 w-full lg:w-auto">
              <div className="relative flex-1 lg:w-64">
                <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
@@ -205,31 +257,43 @@ export function MateriaPrimaView({
              </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 h-max content-start">
-              {filteredMaterials.map((item) => (
-                <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
-                   <div className="flex justify-between items-start">
-                     <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
-                     <div className="flex gap-2 shrink-0 ml-2">
-                       <button onClick={() => handleEdit(item)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
-                          <Edit2 className="w-4 h-4" />
-                       </button>
-                       <button onClick={() => onDeleteMaterial(item.id)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-[#B91C1C] hover:bg-red-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
-                          <Trash2 className="w-4 h-4" />
-                       </button>
+              {filteredMaterials.map((item) => {
+                const currentStock = getStockForBranch(item, currentBranchId);
+                const matrizStock = getStockForBranch(item, '1');
+                const suc2Stock = getStockForBranch(item, '2');
+
+                return (
+                  <div key={item.id} className="bg-white p-4 border-2 border-black rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 group hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-all">
+                     <div className="flex justify-between items-start">
+                       <h3 className="font-black text-lg uppercase leading-tight line-clamp-2">{item.name}</h3>
+                       <div className="flex gap-2 shrink-0 ml-2">
+                         <button onClick={() => handleEdit(item)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none" title="Editar stock para esta sucursal">
+                            <Edit2 className="w-4 h-4" />
+                         </button>
+                         <button onClick={() => onDeleteMaterial(item.id)} className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-[#B91C1C] hover:bg-red-50 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none">
+                            <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
                      </div>
-                   </div>
-                   <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
-                     <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Stock Total</span>
-                       <span className="font-black text-lg">{Number.isInteger(item.stock) ? item.stock : (Math.round(item.stock * 1000) / 1000)} <span className="text-sm opacity-60">{item.unit}</span></span>
+                     <div className="grid grid-cols-2 gap-2 mt-auto pt-3 border-t-2 border-dashed border-black/20">
+                       <div>
+                         <span className="block text-[10px] uppercase font-bold text-[#B91C1C]">Stock {currentBranchId === '2' ? 'San Rafael' : 'Matriz'}</span>
+                         <span className="font-black text-xl text-black">
+                           {Number.isInteger(currentStock) ? currentStock : (Math.round(currentStock * 1000) / 1000)} <span className="text-sm opacity-60">{item.unit}</span>
+                         </span>
+                       </div>
+                       <div>
+                         <span className="block text-[10px] uppercase font-bold opacity-50">Costo Unit.</span>
+                         <span className="font-black text-sm block mt-1">{formatPrice(item.unitCost)}/{item.unit}</span>
+                       </div>
                      </div>
-                     <div>
-                       <span className="block text-[10px] uppercase font-bold opacity-50">Costo</span>
-                       <span className="font-black text-sm block mt-1">{formatPrice(item.unitCost)}/{item.unit}</span>
+                     <div className="bg-slate-100 p-2 rounded-lg border border-slate-300 text-[10px] font-bold flex justify-between items-center text-slate-700">
+                       <span>📍 Matriz: <strong className={currentBranchId === '1' ? 'text-[#B91C1C]' : 'text-black'}>{matrizStock} {item.unit}</strong></span>
+                       <span>📍 San Rafael: <strong className={currentBranchId === '2' ? 'text-[#B91C1C]' : 'text-black'}>{suc2Stock} {item.unit}</strong></span>
                      </div>
-                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

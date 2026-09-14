@@ -42,7 +42,9 @@ export function saveLocalDraft(
   sellerId?: string, 
   sellerName?: string, 
   branchId: string = '1', 
-  branchName?: string
+  branchName?: string,
+  notes?: string,
+  customerName?: string
 ): TableOrder | null {
   const normalized = tableNumber.trim();
   if (!normalized) return null;
@@ -73,7 +75,9 @@ export function saveLocalDraft(
     sellerId,
     sellerName,
     branchId: effectiveBranchId,
-    branchName: effectiveBranchName
+    branchName: effectiveBranchName,
+    notes: notes?.trim() || undefined,
+    customerName: customerName?.trim() || undefined
   };
 
   const freedKey = getFreedKey(normalized, effectiveBranchId);

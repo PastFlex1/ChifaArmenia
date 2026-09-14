@@ -60,6 +60,8 @@ export interface TableOrder {
   sellerName?: string;
   branchId?: string;
   branchName?: string;
+  notes?: string;
+  customerName?: string;
 }
 
 export interface RawMaterial {
@@ -102,17 +104,19 @@ export function getStockForBranch(
   branchId: string = '1'
 ): number {
   if (!item) return 0;
-  if (item.stocks && typeof item.stocks[branchId] === 'number') {
-    return item.stocks[branchId];
-  }
   if (branchId === '2') {
     if (typeof item.stock_sucursal2 === 'number') {
       return item.stock_sucursal2;
     }
-    // Si no se ha registrado stock en Sucursal 2, arranca en 0
+    if (item.stocks && typeof item.stocks['2'] === 'number') {
+      return item.stocks['2'];
+    }
     return 0;
   }
-  // Matriz (Sucursal 1) toma el stock principal histórico
+  // Matriz (Sucursal 1)
+  if (item.stocks && typeof item.stocks['1'] === 'number') {
+    return item.stocks['1'];
+  }
   return typeof item.stock === 'number' ? item.stock : 0;
 }
 

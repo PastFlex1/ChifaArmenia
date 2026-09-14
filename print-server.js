@@ -169,12 +169,12 @@ function printTicket(jobId, order, ticketType) {
           
           writeData(ALIGN_CENTER);
           writeData(textToBuffer('--------------------------------'));
-          if (order.notes) {
+          if (order.notes && typeof order.notes === 'string' && order.notes.trim().length > 0) {
             writeData(ALIGN_LEFT);
             writeData(BOLD_ON);
             writeData(textToBuffer('** OBSERVACIONES: **'));
             writeData(BOLD_OFF);
-            writeData(textToBuffer(order.notes));
+            writeData(textToBuffer(order.notes.trim()));
             writeData(ALIGN_CENTER);
             writeData(textToBuffer('--------------------------------'));
           }
