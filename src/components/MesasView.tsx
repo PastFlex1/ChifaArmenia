@@ -225,8 +225,8 @@ export function MesasView({ activeTables, onSelectTable, onDeleteTable, totalTab
                           <span className="font-black text-base uppercase text-[#1A1A1A] max-w-[70%] truncate" title={order.tableNumber}>
                             {order.tableNumber}
                           </span>
-                          <span className="bg-red-100 text-red-700 font-black text-xs px-2 py-0.5 rounded-full border border-red-300">
-                            Pendiente
+                          <span className="bg-amber-100 text-amber-900 font-black text-xs px-2.5 py-0.5 rounded-full border border-amber-300">
+                            Por Cobrar
                           </span>
                         </div>
 

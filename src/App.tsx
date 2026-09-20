@@ -955,17 +955,7 @@ export default function App() {
       return;
     }
 
-    const norm = targetTable.toLowerCase();
-    if (isDeliveryApp(norm)) {
-      Swal.fire({
-        title: 'Cobro Obligatorio',
-        text: `Los pedidos de ${targetTable} no se pueden guardar como mesa abierta o borrador. Por favor, usa la opción "Cobrar Directo".`,
-        icon: 'warning',
-        confirmButtonColor: '#B91C1C'
-      });
-      return;
-    }
-
+    // Eliminado bloqueo para permitir guardar y enviar a cocina comandas de Uber Eats, Rappi, etc.
     const itemsToSave = Array.isArray(customCart) ? customCart : cart;
     if (itemsToSave.length === 0 || isCheckingOut) return;
     setIsCheckingOut(true);
@@ -1030,7 +1020,7 @@ export default function App() {
         (activeTableDoc?.updatedAt ? new Date(activeTableDoc.updatedAt).getTime() : undefined) ||
         (activeTableDoc?.createdAt ? new Date(activeTableDoc.createdAt).getTime() : undefined);
 
-      if (targetTableId && !isNonTableType(targetTableId) && currentOrderTime && isTableFreed(targetTableId, currentOrderTime, currentBranchId)) {
+      if (targetTableId && currentOrderTime && isTableFreed(targetTableId, currentOrderTime, currentBranchId)) {
         Swal.fire({
           title: 'Mesa Ya Cobrada',
           text: `La mesa ${targetTableId} ya fue cobrada desde otro dispositivo.`,
@@ -1139,11 +1129,25 @@ export default function App() {
       });
 
       batch.set(doc(db, 'orders', newOrder.id), newOrder);
-      if (targetTableId && !isNonTableType(targetTableId)) {
+      if (targetTableId) {
         const docId = `${currentBranchId}_${targetTableId}`;
         batch.delete(doc(db, 'active_tables', docId));
         if (currentBranchId === '1') {
           batch.delete(doc(db, 'active_tables', targetTableId));
+        }
+        // Limpiar también por si coincide en minúsculas o ID asignado
+        const matchedActive = activeTables.find(t =>
+          (t.branchId || '1') === currentBranchId &&
+          t.tableNumber.trim().toLowerCase() === targetTableId.trim().toLowerCase()
+        );
+        if (matchedActive) {
+          batch.delete(doc(db, 'active_tables', `${currentBranchId}_${matchedActive.tableNumber}`));
+          if (matchedActive.id) {
+            batch.delete(doc(db, 'active_tables', matchedActive.id));
+          }
+          if (currentBranchId === '1') {
+            batch.delete(doc(db, 'active_tables', matchedActive.tableNumber));
+          }
         }
         batch.set(doc(db, 'freed_tables', docId), {
           tableNumber: targetTableId,
@@ -2197,18 +2201,12 @@ export default function App() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-1.5 2xl:gap-2 flex-1">
-                  {isDeliveryApp(tableNumber) && (
-                    <div className="w-full py-1.5 2xl:py-2 px-2 bg-red-100 border-2 border-red-500 text-red-900 rounded-xl font-bold text-[11px] text-center flex items-center justify-center gap-1.5">
-                      <Bike className="w-4 h-4 text-[#B91C1C] animate-bounce" />
-                      <span>{tableNumber} exige <strong>Cobrar Directo</strong></span>
-                    </div>
-                  )}
                   <div className="flex gap-2 flex-1">
                     <button
                       onClick={() => handleSaveTable()}
-                      disabled={cart.length === 0 || isCheckingOut || isDeliveryApp(tableNumber)}
+                      disabled={cart.length === 0 || isCheckingOut}
                       className="pos-cart-action-btn flex-1 py-2.5 2xl:py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
-                      title={isDeliveryApp(tableNumber) ? `No se puede guardar ${tableNumber} en mesa` : 'Guardar en mesa'}
+                      title="Guardar comanda en mesas"
                     >
                       Guardar en Mesa
                     </button>
