@@ -81,9 +81,7 @@ export function saveLocalDraft(
   };
 
   const freedKey = getFreedKey(normalized, effectiveBranchId);
-  if (freedTablesTimestamps[freedKey] && nowMs > freedTablesTimestamps[freedKey]) {
-    delete freedTablesTimestamps[freedKey];
-  }
+  delete freedTablesTimestamps[freedKey];
   drafts[draftCompositeKey] = draftOrder;
   try {
     localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
@@ -177,14 +175,12 @@ export function purgeDraftsForCompletedOrders(orders: Order[], currentBranchId?:
     const orderMs = latestOrderByTableBranch[orderKey];
     if (orderMs) {
       const draftMs = draft.updatedAtTimestamp || (draft.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
-      if (orderMs >= draftMs - 60000) {
+      // Solo purgar si el borrador fue creado/actualizado estrictamente ANTES del cobro registrado
+      if (draftMs > 0 && draftMs < orderMs) {
         delete drafts[key];
         freedTablesTimestamps[getFreedKey(normKey, dBranch)] = orderMs;
         changed = true;
       }
-    } else if (isTableFreed(normKey, draft.updatedAtTimestamp, dBranch)) {
-      delete drafts[key];
-      changed = true;
     }
   });
 
@@ -203,21 +199,7 @@ export function getAllLocalDrafts(): Record<string, TableOrder> {
     if (!raw) return {};
     const drafts: Record<string, TableOrder> = JSON.parse(raw);
     
-    let changed = false;
-    Object.keys(drafts).forEach(key => {
-      const draft = drafts[key];
-      const normKey = (draft.tableNumber || key).trim().toLowerCase();
-      const dBranch = draft.branchId || '1';
-      const draftTs = draft?.updatedAtTimestamp || (draft?.updatedAt ? new Date(draft.updatedAt).getTime() : 0);
-      if (draftTs && isTableFreed(normKey, draftTs, dBranch)) {
-        delete drafts[key];
-        changed = true;
-      }
-    });
 
-    if (changed) {
-      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
-    }
 
     return drafts;
   } catch (e) {
@@ -277,32 +259,9 @@ export async function syncTableToFirestore(
     return true;
   }
 
-  // Validar si la mesa fue liberada/cobrada antes o durante la preparación de los datos
-  if (isTableFreed(normalizedTable, draftTime, branchId)) {
-    console.log(`[syncTableToFirestore] Sincronización ignorada: La mesa ${normalizedTable} (Sucursal ${branchId}) fue liberada/cobrada.`);
-    removeLocalDraft(normalizedTable, branchId);
-    return true;
-  }
-
-  // Verificar si existe una nota de venta (order) reciente para esta mesa EN LA MISMA SUCURSAL
-  if (orders && orders.length > 0) {
-    const tableOrders = orders.filter(o => 
-      (o.branchId || '1') === branchId && 
-      o.tableNumber && 
-      o.tableNumber.trim().toLowerCase() === normalizedTable.toLowerCase()
-    );
-    if (tableOrders.length > 0) {
-      tableOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const latestOrder = tableOrders[0];
-      const orderTime = new Date(latestOrder.date).getTime();
-      
-      if (orderTime >= draftTime - 60000) {
-        console.log(`[syncTableToFirestore] Sincronización ignorada: Existe una nota de venta reciente para la mesa ${normalizedTable} en Sucursal ${branchId}. Borrando borrador obsoleto.`);
-        removeLocalDraft(normalizedTable, branchId);
-        return true; 
-      }
-    }
-  }
+  // Limpiar cualquier marca de mesa liberada en memoria para esta mesa activa
+  const freedKey = getFreedKey(normalizedTable, branchId);
+  delete freedTablesTimestamps[freedKey];
 
   try {
     const previousTable = activeTables.find(t => 
@@ -412,17 +371,17 @@ export async function syncTableToFirestore(
         batch.delete(doc(db, 'active_tables', normalizedTable));
       }
     } else {
-      // Verificación de seguridad justo antes del commit
-      if (isTableFreed(normalizedTable, syncStartTime, branchId)) {
-        console.log(`[syncTableToFirestore] Commit cancelado: La mesa ${normalizedTable} (Sucursal ${branchId}) fue liberada/cobrada durante la sincronización.`);
-        return true;
-      }
       batch.set(doc(db, 'active_tables', docId), {
         ...tableOrder,
         id: docId,
         branchId,
         branchName: tableOrder.branchName || (branchId === '2' ? 'Sucursal 2' : 'Matriz')
       });
+      // Remover de freed_tables para asegurar que la mesa no conste como liberada en ningún cliente
+      batch.delete(doc(db, 'freed_tables', docId));
+      if (branchId === '1') {
+        batch.delete(doc(db, 'freed_tables', normalizedTable));
+      }
       // Si existía con el ID sin prefijo heredado, limpiarlo para evitar duplicidad
       if (branchId === '2') {
         batch.delete(doc(db, 'active_tables', normalizedTable));

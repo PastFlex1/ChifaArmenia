@@ -191,6 +191,27 @@ export default function App() {
     }));
   }, [drinks, currentBranchId]);
 
+  // Mesas activas de la sucursal actual combinadas con borradores locales para evitar parpadeos
+  const displayActiveTables = useMemo(() => {
+    const branchTables = activeTables.filter(t => (t.branchId || '1') === currentBranchId);
+    try {
+      const drafts = getAllLocalDrafts();
+      const result = [...branchTables];
+      Object.values(drafts).forEach(draft => {
+        if ((draft.branchId || '1') === currentBranchId && draft.items && draft.items.length > 0) {
+          const norm = (draft.tableNumber || '').trim().toLowerCase();
+          const exists = result.some(t => (t.tableNumber || '').trim().toLowerCase() === norm);
+          if (!exists) {
+            result.push(draft);
+          }
+        }
+      });
+      return result;
+    } catch {
+      return branchTables;
+    }
+  }, [activeTables, currentBranchId]);
+
   // Network Connection Monitor (Offline-First)
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
@@ -215,7 +236,7 @@ export default function App() {
       if (!isMounted) return;
       setLatencyInfo(lat);
 
-      if (lat.isOnline && lat.isFast && isDbLoaded) {
+      if (lat.isOnline && isDbLoaded) {
         const drafts = getAllLocalDrafts();
         const keys = Object.keys(drafts);
         if (keys.length > 0) {
@@ -231,7 +252,7 @@ export default function App() {
           }
           if (isMounted) setSyncState('synced');
         } else if (isMounted && syncState !== 'syncing') {
-          setSyncState('synced');
+          setSyncState(lat.isFast ? 'synced' : 'local_slow');
         }
       } else if (isMounted) {
         setSyncState(lat.isOnline ? 'local_slow' : 'offline');
@@ -264,6 +285,13 @@ export default function App() {
       }
 
       if (activeTableId && activeTableId.trim().toLowerCase() === normFreed) {
+        const freedTimestamp = detail.freedTimestamp || 0;
+        const currentCartTime = Math.max(...cart.map(i => parseInt(i.id.substring(0, 13)) || 0), 0);
+        // Si el mesero está agregando productos a esta mesa DESPUÉS de la liberación, no interrumpir su trabajo
+        if (freedTimestamp > 0 && currentCartTime > freedTimestamp) {
+          return;
+        }
+
         Swal.fire({
           title: 'Mesa Liberada',
           text: `La mesa ${freedTable} fue cobrada o liberada desde otra computadora.`,
@@ -349,11 +377,12 @@ export default function App() {
           const tBranch = removedData?.branchId || (docId.includes('_') ? docId.split('_')[0] : '1');
           const tNum = removedData?.tableNumber || (docId.includes('_') ? docId.substring(docId.indexOf('_') + 1) : docId);
           if (tNum) {
-            markTableAsFreed(tNum, undefined, tBranch);
+            const removedTimestamp = removedData?.updatedAtTimestamp || (removedData?.updatedAt ? new Date(removedData.updatedAt).getTime() : Date.now());
+            markTableAsFreed(tNum, removedTimestamp, tBranch);
             const localKey = `${tBranch}_${tNum.trim().toLowerCase()}`;
             const localTime = locallyProcessedTablesRef.current.get(localKey);
             if (!localTime || Date.now() - localTime > 15000) {
-              window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch } }));
+              window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch, freedTimestamp: removedTimestamp } }));
             }
           }
         }
@@ -746,10 +775,6 @@ export default function App() {
   };
 
   const clearCart = () => {
-    const targetTable = (activeTableId || tableNumber).trim();
-    if (targetTable) {
-      markTableAsFreed(targetTable);
-    }
     setCart([]);
     setTableNumber('');
     setCustomerName('');
@@ -957,7 +982,7 @@ export default function App() {
     );
 
     try {
-      if (latencyInfo.isOnline && latencyInfo.isFast) {
+      if (latencyInfo.isOnline && tableOrder) {
         const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
         if (success) {
           removeLocalDraft(targetTable, currentBranchId);
@@ -1707,7 +1732,7 @@ export default function App() {
             </div>
           ) : currentView === 'mesas' ? (
             <MesasView
-              activeTables={activeTables.filter(t => (t.branchId || '1') === currentBranchId)}
+              activeTables={displayActiveTables}
               onSelectTable={handleTableClick}
               onDeleteTable={currentUser?.role === 'Administrador' ? handleDeleteTable : undefined}
               totalTables={30}
@@ -2537,8 +2562,11 @@ export default function App() {
                 orderNotes.trim() || undefined,
                 customerName.trim() || undefined
               );
-              if (latencyInfo.isOnline && latencyInfo.isFast) {
-                await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
+              if (latencyInfo.isOnline && tableOrder) {
+                const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
+                if (success) {
+                  removeLocalDraft(targetTable, currentBranchId);
+                }
               }
             }
           }}
