@@ -285,10 +285,8 @@ export default function App() {
       }
 
       if (activeTableId && activeTableId.trim().toLowerCase() === normFreed) {
-        const freedTimestamp = detail.freedTimestamp || 0;
-        const currentCartTime = Math.max(...cart.map(i => parseInt(i.id.substring(0, 13)) || 0), 0);
-        // Si el mesero está agregando productos a esta mesa DESPUÉS de la liberación, no interrumpir su trabajo
-        if (freedTimestamp > 0 && currentCartTime > freedTimestamp) {
+        // Si el usuario tiene productos en su carrito actual, NO borrar su trabajo ni cerrarle la mesa
+        if (cart.length > 0) {
           return;
         }
 
@@ -401,28 +399,10 @@ export default function App() {
       if (!loadedState.tables) { loadedState.tables = true; checkComplete(); }
     });
 
-    const unsubFreedTables = onSnapshot(collection(db, 'freed_tables'), snapshot => {
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'added' || change.type === 'modified') {
-          const data = change.doc.data();
-          const docId = change.doc.id;
-          const freedBranch = data?.branchId || (docId.includes('_') ? docId.split('_')[0] : '1');
-          if (data && data.tableNumber) {
-            const freedAtMs = data.freedAtTimestamp || (data.freedAt ? new Date(data.freedAt).getTime() : Date.now());
-            markTableAsFreed(data.tableNumber, freedAtMs, freedBranch);
-            const localKey = `${freedBranch}_${data.tableNumber.trim().toLowerCase()}`;
-            const localTime = locallyProcessedTablesRef.current.get(localKey);
-            if (!localTime || Date.now() - localTime > 15000) {
-              window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: data.tableNumber, branchId: freedBranch } }));
-            }
-          }
-        }
-      });
-      if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
-    }, (error) => {
-      console.error("Error fetching freed_tables:", error);
-      if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
-    });
+    // La colección active_tables ya maneja en tiempo real las liberaciones cuando un documento es eliminado.
+    // Marcamos freed_tables como cargado para evitar alertas espurias del historial antiguo.
+    const unsubFreedTables = () => {};
+    if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
 
     const counterRef = doc(db, 'counters', 'orders');
     const unsubCounter = onSnapshot(counterRef, (docSnap: any) => {
@@ -806,9 +786,35 @@ export default function App() {
     const localDraft = getLocalDraft(tNumber, currentBranchId);
     const firestoreTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber.trim().toLowerCase() === norm);
 
-    const loadedItems = localDraft ? localDraft.items : (firestoreTable ? firestoreTable.items : []);
-    const loadedNotes = localDraft?.notes || firestoreTable?.notes || '';
-    const loadedCustomer = localDraft?.customerName || firestoreTable?.customerName || '';
+    let loadedItems: CartItem[] = [];
+    let loadedNotes = '';
+    let loadedCustomer = '';
+
+    const firestoreItems = firestoreTable?.items || [];
+    const draftItems = localDraft?.items || [];
+
+    // Priorizar siempre Firestore para no perder los platos ya guardados por meseros
+    if (firestoreItems.length > 0 && draftItems.length > 0) {
+      const draftTime = localDraft?.updatedAtTimestamp || (localDraft?.updatedAt ? new Date(localDraft.updatedAt).getTime() : 0);
+      const firestoreTime = firestoreTable?.updatedAtTimestamp || (firestoreTable?.updatedAt ? new Date(firestoreTable.updatedAt).getTime() : 0);
+      if (draftTime >= firestoreTime) {
+        loadedItems = draftItems;
+        loadedNotes = localDraft?.notes || firestoreTable?.notes || '';
+        loadedCustomer = localDraft?.customerName || firestoreTable?.customerName || '';
+      } else {
+        loadedItems = firestoreItems;
+        loadedNotes = firestoreTable?.notes || localDraft?.notes || '';
+        loadedCustomer = firestoreTable?.customerName || localDraft?.customerName || '';
+      }
+    } else if (firestoreItems.length > 0) {
+      loadedItems = firestoreItems;
+      loadedNotes = firestoreTable?.notes || '';
+      loadedCustomer = firestoreTable?.customerName || '';
+    } else if (draftItems.length > 0) {
+      loadedItems = draftItems;
+      loadedNotes = localDraft?.notes || '';
+      loadedCustomer = localDraft?.customerName || '';
+    }
 
     setCart(loadedItems);
     setTableNumber(tNumber);
@@ -1012,26 +1018,7 @@ export default function App() {
         locallyProcessedTablesRef.current.set(`${currentBranchId}_${targetTableId.toLowerCase()}`, Date.now());
       }
 
-      // 1. Protección contra duplicados en mesas cobradas remotamente
-      const localDraft = getLocalDraft(targetTableId, currentBranchId);
-      const activeTableDoc = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber.trim().toLowerCase() === targetTableId.toLowerCase());
-      const currentOrderTime = localDraft?.updatedAtTimestamp || 
-        activeTableDoc?.updatedAtTimestamp ||
-        (activeTableDoc?.updatedAt ? new Date(activeTableDoc.updatedAt).getTime() : undefined) ||
-        (activeTableDoc?.createdAt ? new Date(activeTableDoc.createdAt).getTime() : undefined);
-
-      if (targetTableId && currentOrderTime && isTableFreed(targetTableId, currentOrderTime, currentBranchId)) {
-        Swal.fire({
-          title: 'Mesa Ya Cobrada',
-          text: `La mesa ${targetTableId} ya fue cobrada desde otro dispositivo.`,
-          icon: 'info',
-          confirmButtonColor: '#000'
-        });
-        clearCart();
-        setActiveTableId(null);
-        setIsCheckingOut(false);
-        return;
-      }
+      // 1. Registrar procesamiento local para evitar rebotes de eventos propios
 
       // 2. Protección contra cobros duplicados en menos de 10 segundos (misma mesa/canal y mismo total en la misma sucursal)
       const tenSecAgo = Date.now() - 10000;
