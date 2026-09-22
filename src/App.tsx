@@ -1737,25 +1737,26 @@ export default function App() {
               onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('materials') : undefined}
               onAddMaterial={async (m) => {
                 const existing = rawMaterials.find(rm => rm.id === m.id);
-                const existingStocks = existing?.stocks || {};
                 const inputStock = Number(m.stock) || 0;
 
-                const updatedStocks = {
-                  ...existingStocks,
-                  [currentBranchId]: inputStock
-                };
-
-                const payload: any = {
-                  ...m,
-                  stocks: updatedStocks
-                };
-
+                const payload: any = { ...m };
+                
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload.stock = existing ? (existing.stock ?? 0) : 0;
+                  payload['stocks.2'] = inputStock;
+                  if (!existing) {
+                    payload.stock = 0;
+                    payload['stocks.1'] = 0;
+                  } else {
+                    delete payload.stock; // Do not overwrite Matriz stock!
+                  }
                 } else {
                   payload.stock = inputStock;
-                  payload.stock_sucursal2 = existing ? (existing.stock_sucursal2 ?? 0) : 0;
+                  payload['stocks.1'] = inputStock;
+                  if (!existing) {
+                    payload.stock_sucursal2 = 0;
+                    payload['stocks.2'] = 0;
+                  }
                 }
 
                 await setDoc(doc(db, 'rawMaterials', m.id), payload, { merge: true });
@@ -1846,25 +1847,26 @@ export default function App() {
               onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('drinks') : undefined}
               onAddDrink={async (d) => {
                 const existing = drinks.find(dr => dr.id === d.id);
-                const existingStocks = existing?.stocks || {};
                 const inputStock = Number(d.stock) || 0;
 
-                const updatedStocks = {
-                  ...existingStocks,
-                  [currentBranchId]: inputStock
-                };
-
-                const payload: any = {
-                  ...d,
-                  stocks: updatedStocks
-                };
+                const payload: any = { ...d };
 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload.stock = existing ? (existing.stock ?? 0) : 0;
+                  payload['stocks.2'] = inputStock;
+                  if (!existing) {
+                    payload.stock = 0;
+                    payload['stocks.1'] = 0;
+                  } else {
+                    delete payload.stock; // Do not overwrite Matriz stock!
+                  }
                 } else {
                   payload.stock = inputStock;
-                  payload.stock_sucursal2 = existing ? (existing.stock_sucursal2 ?? 0) : 0;
+                  payload['stocks.1'] = inputStock;
+                  if (!existing) {
+                    payload.stock_sucursal2 = 0;
+                    payload['stocks.2'] = 0;
+                  }
                 }
 
                 await setDoc(doc(db, 'drinks', d.id), payload, { merge: true });
