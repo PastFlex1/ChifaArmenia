@@ -24,7 +24,7 @@ export const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager()
   }),
   ignoreUndefinedProperties: true,
-  experimentalAutoDetectLongPolling: true
+  experimentalForceLongPolling: true
 });
 // export const auth = getAuth(app); // Descomenta esto cuando habilites Authentication en la consola de Firebase
 
