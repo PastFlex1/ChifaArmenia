@@ -41,7 +41,7 @@
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-data-connect-basics/SKILL.md",
-      "computedHash": "72a5f0c53909db6a7bd9237e74eccfff0d469bbe6df5126e25f019627fa0583c"
+      "computedHash": "8bfaff4b91f9dcbd8c48f1e013214f4801c2f9e924473ea8611b72295b7771d1"
     },
     "firebase-firestore": {
       "source": "firebase/agent-skills",
@@ -59,7 +59,7 @@
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-remote-config-basics/SKILL.md",
-      "computedHash": "4a6e2f5ce701c81ac75c138f2fbae0f9ec9159b5c67c825ee173dfe6147da9ee"
+      "computedHash": "b3e5c76a5e2bc5b8e52adcc6965f921cff87e871e51d5b758f6148729ae5b278"
     },
     "firebase-security-rules-auditor": {
       "source": "firebase/agent-skills",
@@ -77,7 +77,7 @@
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/xcode-project-setup/SKILL.md",
-      "computedHash": "673e1c3a078c3a77c4ae706ddc731c9efc5d151b82097ef52f10c575e4cdc1c1"
+      "computedHash": "954176d9418293d02df8e1a3a31bdfd1cb0624968b2bad5a5dc7afbd6a35199e"
     }
   }
 }

@@ -1739,23 +1739,25 @@ export default function App() {
                 const existing = rawMaterials.find(rm => rm.id === m.id);
                 const inputStock = Number(m.stock) || 0;
 
-                const payload: any = { ...m };
+                const payload: any = { 
+                  name: m.name,
+                  unit: m.unit,
+                  unitCost: m.unitCost
+                };
                 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload['stocks.2'] = inputStock;
+                  payload.stocks = { ...(existing?.stocks || {}), '2': inputStock };
                   if (!existing) {
                     payload.stock = 0;
-                    payload['stocks.1'] = 0;
-                  } else {
-                    delete payload.stock; // Do not overwrite Matriz stock!
+                    payload.stocks['1'] = 0;
                   }
                 } else {
                   payload.stock = inputStock;
-                  payload['stocks.1'] = inputStock;
+                  payload.stocks = { ...(existing?.stocks || {}), '1': inputStock };
                   if (!existing) {
                     payload.stock_sucursal2 = 0;
-                    payload['stocks.2'] = 0;
+                    payload.stocks['2'] = 0;
                   }
                 }
 
@@ -1849,23 +1851,26 @@ export default function App() {
                 const existing = drinks.find(dr => dr.id === d.id);
                 const inputStock = Number(d.stock) || 0;
 
-                const payload: any = { ...d };
+                const payload: any = { 
+                  name: d.name,
+                  category: d.category,
+                  price: d.price,
+                  unitCost: d.unitCost
+                };
 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload['stocks.2'] = inputStock;
+                  payload.stocks = { ...(existing?.stocks || {}), '2': inputStock };
                   if (!existing) {
                     payload.stock = 0;
-                    payload['stocks.1'] = 0;
-                  } else {
-                    delete payload.stock; // Do not overwrite Matriz stock!
+                    payload.stocks['1'] = 0;
                   }
                 } else {
                   payload.stock = inputStock;
-                  payload['stocks.1'] = inputStock;
+                  payload.stocks = { ...(existing?.stocks || {}), '1': inputStock };
                   if (!existing) {
                     payload.stock_sucursal2 = 0;
-                    payload['stocks.2'] = 0;
+                    payload.stocks['2'] = 0;
                   }
                 }
 
