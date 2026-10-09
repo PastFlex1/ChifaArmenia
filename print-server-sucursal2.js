@@ -274,7 +274,14 @@ onSnapshot(q, (snapshot) => {
     if (change.type === "added") {
       const job = change.doc.data();
       const jobId = change.doc.id;
-      const jobBranch = job.branchId || job.order?.branchId || '1';
+      const jobBranch = (
+        job.branchId === '2' || 
+        job.branchId === 'San Rafael' || 
+        job.branchId === 'Sucursal 2' || 
+        job.order?.branchId === '2' || 
+        job.order?.branchName === 'San Rafael' || 
+        job.order?.branchName === 'Sucursal 2'
+      ) ? '2' : '1';
 
       // Filtrar e ignorar impresiones que pertenezcan a la otra sucursal
       if (jobBranch !== TARGET_BRANCH_ID) {

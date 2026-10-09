@@ -273,10 +273,17 @@ onSnapshot(q, (snapshot) => {
     if (change.type === "added") {
       const job = change.doc.data();
       const jobId = change.doc.id;
-      const jobBranch = job.branchId || job.order?.branchId || '1';
+      const jobBranch = (
+        job.branchId === '2' || 
+        job.branchId === 'San Rafael' || 
+        job.branchId === 'Sucursal 2' || 
+        job.order?.branchId === '2' || 
+        job.order?.branchName === 'San Rafael' || 
+        job.order?.branchName === 'Sucursal 2'
+      ) ? '2' : '1';
 
       // Ignorar trabajos de otra sucursal
-      if (TARGET_BRANCH_ID && jobBranch !== TARGET_BRANCH_ID) {
+      if (TARGET_BRANCH_ID && TARGET_BRANCH_ID !== 'ALL' && jobBranch !== TARGET_BRANCH_ID) {
         console.log(`[-] Ignorando trabajo ${jobId} porque pertenece a Sucursal ${jobBranch} (Este servidor es Sucursal ${TARGET_BRANCH_ID}).`);
         return;
       }

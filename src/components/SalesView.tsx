@@ -10,6 +10,7 @@ interface SalesViewProps {
   users?: UserAccount[];
   currentUser: UserAccount | null;
   currentBranchId?: '1' | '2';
+  onSwitchBranch?: (branch: '1' | '2') => void;
   onViewReceipt: (order: Order) => void;
   onDeleteOrder?: (id: string) => void;
   onVoidOrder?: (id: string) => void;
@@ -24,6 +25,7 @@ export function SalesView({
   users = [], 
   currentUser, 
   currentBranchId: propBranchId,
+  onSwitchBranch,
   onViewReceipt, 
   onDeleteOrder, 
   onVoidOrder, 
@@ -367,6 +369,42 @@ export function SalesView({
       {/* Filters (Organized Control Bar with Pill Buttons) */}
       <div className="shrink-0 flex flex-col gap-3 bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
         
+        {/* Row 0: Selector de Sucursal (para Administrador) */}
+        {currentUser?.role === 'Administrador' && onSwitchBranch && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-2 border-slate-100">
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border-2 border-black">
+              <span className="text-[10px] font-black uppercase text-slate-500 px-2 shrink-0">Sucursal:</span>
+              <button
+                type="button"
+                onClick={() => onSwitchBranch('1')}
+                className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all cursor-pointer ${
+                  activeBranch === '1'
+                    ? 'bg-[#1A1A1A] text-[#FFD700] shadow-none translate-y-[1px]'
+                    : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                }`}
+              >
+                📍 Matriz (Armenia)
+              </button>
+              <button
+                type="button"
+                onClick={() => onSwitchBranch('2')}
+                className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-xs transition-all cursor-pointer ${
+                  activeBranch === '2'
+                    ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]'
+                    : 'bg-white text-slate-800 hover:bg-slate-50 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                }`}
+              >
+                📍 San Rafael
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider px-3 py-1 bg-[#F7F4F0] border-2 border-black rounded-xl">
+                📍 Viendo ventas de: <span className="text-[#B91C1C] font-black">{activeBranch === '2' ? 'San Rafael' : 'Armenia'}</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Row 1: Vendedor (si es Administrador) */}
         {currentUser?.role === 'Administrador' && sellers.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">

@@ -31,13 +31,21 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
       quantity: item.quantity - (item.printedQuantity || 0)
     }));
 
+  const isBranch2 = order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael';
+  const branchDisplayName = isBranch2 ? 'San Rafael' : 'Armenia';
+
   // Función para guardar el ticket en la nube de Firebase
   const printViaCloudQueue = async (type: 'customer' | 'kitchen', orderToPrint: Order) => {
     try {
+      const jobBranch = (orderToPrint.branchId === '2' || orderToPrint.branchName === 'Sucursal 2' || orderToPrint.branchName === 'San Rafael') ? '2' : '1';
       await addDoc(collection(db, 'print_jobs'), {
-        order: orderToPrint,
+        order: {
+          ...orderToPrint,
+          branchId: jobBranch,
+          branchName: jobBranch === '2' ? 'San Rafael' : 'Armenia'
+        },
         ticketType: type,
-        branchId: orderToPrint.branchId || '1',
+        branchId: jobBranch,
         status: 'pending',
         createdAt: new Date().toISOString()
       });
@@ -46,6 +54,10 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
       console.error("Error enviando a cola de impresión:", e);
       return false;
     }
+  };
+
+  const handleDirectBrowserPrint = () => {
+    window.print();
   };
 
   const handlePrintCustomer = async () => {
@@ -57,7 +69,12 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
     // 1. Enviamos a la nube
     const success = await printViaCloudQueue('customer', order);
     if (success) {
-      Swal.fire('Enviado a Cola', 'Ticket en cola de impresión', 'success');
+      Swal.fire({
+        title: 'Enviado a Cola',
+        html: `<p>Ticket enviado a la cola de <b>${branchDisplayName}</b>.</p><p style="font-size: 11px; margin-top: 8px; color: #555;">Si la impresora térmica automática no responde, puedes usar <b>"Imprimir Directo (Navegador)"</b>.</p>`,
+        icon: 'success',
+        confirmButtonColor: '#1A1A1A'
+      });
       setIsPrinting(false);
       isPrintingRef.current = false;
       return;
@@ -83,7 +100,12 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
     
     const success = await printViaCloudQueue('kitchen', { ...order, items: kitchenItems });
     if (success) {
-      Swal.fire('Enviado a Cola', 'Comanda en cola de impresión de cocina', 'success');
+      Swal.fire({
+        title: 'Comanda en Cola',
+        html: `<p>Comanda enviada a la cocina de <b>${branchDisplayName}</b>.</p><p style="font-size: 11px; margin-top: 8px; color: #555;">Si la impresora térmica de cocina no responde, puedes usar <b>"Imprimir Directo (Navegador)"</b>.</p>`,
+        icon: 'success',
+        confirmButtonColor: '#1A1A1A'
+      });
       setIsPrinting(false);
       isPrintingRef.current = false;
       onKitchenPrint?.();
@@ -117,7 +139,12 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
       }
       
       if (successCustomer && successKitchen) {
-        Swal.fire('Enviado a Cola', kitchenItems.length > 0 ? 'Ambos tickets en cola de impresión' : 'Ticket cliente en cola (sin productos nuevos para cocina)', 'success');
+        Swal.fire({
+          title: 'Tickets en Cola',
+          html: `<p>${kitchenItems.length > 0 ? 'Ambos tickets en cola de impresión de' : 'Ticket cliente en cola de'} <b>${branchDisplayName}</b>.</p><p style="font-size: 11px; margin-top: 8px; color: #555;">Si la impresora térmica automática no responde, puedes usar <b>"Imprimir Directo (Navegador)"</b>.</p>`,
+          icon: 'success',
+          confirmButtonColor: '#1A1A1A'
+        });
         setIsPrinting(false);
         isPrintingRef.current = false;
         if (kitchenItems.length > 0) {
@@ -242,7 +269,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 {/* Store Header */}
                 <div className="text-center mb-6">
                   <h1 className="text-2xl font-black mb-1 text-center w-full">
-                    {(order.branchId === '2' || order.branchName === 'Sucursal 2') ? 'CHIFA MEI HUA SAN RAFAEL' : 'CHIFA MEI HUA ARMENIA'}
+                    {isBranch2 ? 'CHIFA MEI HUA SAN RAFAEL' : 'CHIFA MEI HUA ARMENIA'}
                   </h1>
                   {order.branchName && (
                     <p className="text-xs font-black uppercase text-[#B91C1C] mb-1">📍 {order.branchName.toUpperCase()}</p>
@@ -445,7 +472,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
           
           <div className="flex gap-2">
             <button
-              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 cursor-pointer ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handlePrintCustomer}
               disabled={isPrinting}
             >
@@ -453,7 +480,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
               {isPrinting ? '...' : 'Solo Factura'}
             </button>
             <button
-              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`flex-1 py-3 bg-white border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-1 cursor-pointer ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}`}
               onClick={handlePrintKitchen}
               disabled={isPrinting}
             >
@@ -462,8 +489,18 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
             </button>
           </div>
 
+          {/* Botón de Impresión Directa en el Navegador (Siempre disponible) */}
           <button
-            className="w-full py-3 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2"
+            className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border-2 border-emerald-950 rounded-xl font-black uppercase text-[11px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2 cursor-pointer"
+            onClick={handleDirectBrowserPrint}
+            title="Imprimir directamente usando el cuadro de diálogo de tu navegador"
+          >
+            <Printer className="w-4 h-4 text-emerald-800" />
+            🖨️ Imprimir Directo (Navegador)
+          </button>
+
+          <button
+            className="w-full py-3 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2 cursor-pointer"
             onClick={handleDownloadPDF}
             disabled={isPrinting}
           >

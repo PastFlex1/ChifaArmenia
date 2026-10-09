@@ -17,6 +17,7 @@ import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs } from 'firebase/firestore';
 import Swal from 'sweetalert2';
 import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, SyncState, LatencyStatus } from './utils/syncManager';
+import { setupKeepAlive } from './utils/keepAlive';
 
 export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
@@ -53,6 +54,7 @@ export default function App() {
 
   // Asegurar zoom normal de 100% por defecto y detectar resolución 1366x768
   useEffect(() => {
+    setupKeepAlive(); // Activar el hack para evitar que el navegador duerma la pestaña
     localStorage.removeItem('chifa_ui_zoom');
     const root = document.getElementById('root');
     if (root) root.style.zoom = '1';
@@ -80,7 +82,7 @@ export default function App() {
 
   const currentBranchId: '1' | '2' = (currentUser?.branchId === '2' || currentUser?.cedula === '1714851332001')
     ? '2'
-    : (currentUser?.branchId === '1' ? '1' : (terminalBranchId || '1'));
+    : (currentUser?.role === 'Administrador' ? (terminalBranchId || '1') : (currentUser?.branchId === '1' ? '1' : (terminalBranchId || '1')));
 
   const currentBranchName = currentBranchId === '2' ? 'San Rafael' : 'Armenia';
 
@@ -94,11 +96,11 @@ export default function App() {
   const handleSwitchBranch = (newBranch: '1' | '2') => {
     setTerminalBranchId(newBranch);
     localStorage.setItem('chifa_pos_terminal_branch', newBranch);
-    if (currentUser && currentUser.role === 'Administrador') {
+    if (currentUser) {
       setCurrentUser({
         ...currentUser,
         branchId: newBranch,
-        branchName: newBranch === '2' ? 'Sucursal 2' : 'Matriz'
+        branchName: newBranch === '2' ? 'San Rafael' : 'Armenia'
       });
     }
     setCart([]);
@@ -857,6 +859,69 @@ export default function App() {
       try {
         const batch = writeBatch(db);
         const docId = `${currentBranchId}_${tableNum}`;
+
+        // Devolver inventario si la comanda tenía productos ingresados
+        const tableToDelete = activeTables.find(t => 
+          (t.branchId || '1') === currentBranchId && 
+          (t.tableNumber || '').trim().toLowerCase() === tableNum.trim().toLowerCase()
+        );
+        const oldItems = tableToDelete?.items || [];
+        if (oldItems.length > 0) {
+          const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, [], currentBranchId);
+          newRawMaterials.forEach((rm, index) => {
+            const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
+            if (rm.stock !== origStock) {
+              if (currentBranchId === '2') {
+                batch.update(doc(db, 'rawMaterials', rm.id), {
+                  'stocks.2': rm.stock,
+                  stock_sucursal2: rm.stock
+                });
+              } else {
+                batch.update(doc(db, 'rawMaterials', rm.id), {
+                  stock: rm.stock,
+                  'stocks.1': rm.stock
+                });
+              }
+            }
+          });
+          newDrinks.forEach((drink, index) => {
+            const origStock = getStockForBranch(drinks[index], currentBranchId);
+            if (drink.stock !== origStock) {
+              if (currentBranchId === '2') {
+                batch.update(doc(db, 'drinks', drink.id), {
+                  'stocks.2': drink.stock,
+                  stock_sucursal2: drink.stock
+                });
+              } else {
+                batch.update(doc(db, 'drinks', drink.id), {
+                  stock: drink.stock,
+                  'stocks.1': drink.stock
+                });
+              }
+            }
+          });
+
+          // Actualizar estado local inmediatamente
+          setRawMaterials(prev => prev.map(rm => {
+            const updated = newRawMaterials.find(n => n.id === rm.id);
+            if (!updated) return rm;
+            if (currentBranchId === '2') {
+              return { ...rm, stock_sucursal2: updated.stock, stocks: { ...(rm.stocks || {}), '2': updated.stock } };
+            } else {
+              return { ...rm, stock: updated.stock, stocks: { ...(rm.stocks || {}), '1': updated.stock } };
+            }
+          }));
+          setDrinks(prev => prev.map(dr => {
+            const updated = newDrinks.find(n => n.id === dr.id);
+            if (!updated) return dr;
+            if (currentBranchId === '2') {
+              return { ...dr, stock_sucursal2: updated.stock, stocks: { ...(dr.stocks || {}), '2': updated.stock } };
+            } else {
+              return { ...dr, stock: updated.stock, stocks: { ...(dr.stocks || {}), '1': updated.stock } };
+            }
+          }));
+        }
+
         batch.delete(doc(db, 'active_tables', docId));
         if (currentBranchId === '1') {
           batch.delete(doc(db, 'active_tables', tableNum));
@@ -873,7 +938,7 @@ export default function App() {
         markTableAsFreed(tableNum, undefined, currentBranchId);
         Swal.fire({
           title: 'Comanda Liberada',
-          text: `La comanda de "${tableNum}" ha sido descartada exitosamente.`,
+          text: `La comanda de "${tableNum}" ha sido descartada y el inventario devuelto exitosamente.`,
           icon: 'success',
           timer: 1500,
           showConfirmButton: false
@@ -1200,7 +1265,10 @@ export default function App() {
     }
 
     try {
-      const previousTable = activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId);
+      const previousTable = activeTables.find(t => 
+        (t.branchId || '1') === currentBranchId && 
+        (t.tableNumber || '').trim().toLowerCase() === targetTableId.trim().toLowerCase()
+      );
       const oldItems = previousTable ? previousTable.items : [];
 
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, [], currentBranchId);
@@ -1254,8 +1322,29 @@ export default function App() {
       }
 
       await batch.commit();
+
+      // Actualizar estado local inmediatamente
+      setRawMaterials(prev => prev.map(rm => {
+        const updated = newRawMaterials.find(n => n.id === rm.id);
+        if (!updated) return rm;
+        if (currentBranchId === '2') {
+          return { ...rm, stock_sucursal2: updated.stock, stocks: { ...(rm.stocks || {}), '2': updated.stock } };
+        } else {
+          return { ...rm, stock: updated.stock, stocks: { ...(rm.stocks || {}), '1': updated.stock } };
+        }
+      }));
+      setDrinks(prev => prev.map(dr => {
+        const updated = newDrinks.find(n => n.id === dr.id);
+        if (!updated) return dr;
+        if (currentBranchId === '2') {
+          return { ...dr, stock_sucursal2: updated.stock, stocks: { ...(dr.stocks || {}), '2': updated.stock } };
+        } else {
+          return { ...dr, stock: updated.stock, stocks: { ...(dr.stocks || {}), '1': updated.stock } };
+        }
+      }));
+
       markTableAsFreed(targetTableId, undefined, currentBranchId);
-      Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada.`, icon: 'success', timer: 1500, showConfirmButton: false });
+      Swal.fire({ title: 'Éxito', text: `Mesa ${targetTableId} liberada y stock devuelto.`, icon: 'success', timer: 1500, showConfirmButton: false });
       clearCart();
       setActiveTableId(null);
       setCurrentView('mesas');
@@ -1328,7 +1417,7 @@ export default function App() {
       return;
     }
 
-    const orderBranchId = order.branchId || '1';
+    const orderBranchId: '1' | '2' = (order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael') ? '2' : '1';
 
     try {
       const { newRawMaterials, newDrinks } = getNetStockChanges(order.items || [], [], orderBranchId);
@@ -1375,42 +1464,40 @@ export default function App() {
 
       // Actualizar estado local inmediatamente para retroalimentación visual instantánea
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'voided' } : o));
-      if (orderBranchId === currentBranchId) {
-        setRawMaterials(prev => prev.map(rm => {
-          const updated = newRawMaterials.find(n => n.id === rm.id);
-          if (!updated) return rm;
-          if (currentBranchId === '2') {
-            return {
-              ...rm,
-              stock_sucursal2: updated.stock,
-              stocks: { ...(rm.stocks || {}), '2': updated.stock }
-            };
-          } else {
-            return {
-              ...rm,
-              stock: updated.stock,
-              stocks: { ...(rm.stocks || {}), '1': updated.stock }
-            };
-          }
-        }));
-        setDrinks(prev => prev.map(dr => {
-          const updated = newDrinks.find(n => n.id === dr.id);
-          if (!updated) return dr;
-          if (currentBranchId === '2') {
-            return {
-              ...dr,
-              stock_sucursal2: updated.stock,
-              stocks: { ...(dr.stocks || {}), '2': updated.stock }
-            };
-          } else {
-            return {
-              ...dr,
-              stock: updated.stock,
-              stocks: { ...(dr.stocks || {}), '1': updated.stock }
-            };
-          }
-        }));
-      }
+      setRawMaterials(prev => prev.map(rm => {
+        const updated = newRawMaterials.find(n => n.id === rm.id);
+        if (!updated) return rm;
+        if (orderBranchId === '2') {
+          return {
+            ...rm,
+            stock_sucursal2: updated.stock,
+            stocks: { ...(rm.stocks || {}), '2': updated.stock }
+          };
+        } else {
+          return {
+            ...rm,
+            stock: updated.stock,
+            stocks: { ...(rm.stocks || {}), '1': updated.stock }
+          };
+        }
+      }));
+      setDrinks(prev => prev.map(dr => {
+        const updated = newDrinks.find(n => n.id === dr.id);
+        if (!updated) return dr;
+        if (orderBranchId === '2') {
+          return {
+            ...dr,
+            stock_sucursal2: updated.stock,
+            stocks: { ...(dr.stocks || {}), '2': updated.stock }
+          };
+        } else {
+          return {
+            ...dr,
+            stock: updated.stock,
+            stocks: { ...(dr.stocks || {}), '1': updated.stock }
+          };
+        }
+      }));
     } catch (e: any) {
       console.error("Error voiding order:", e);
       const errMsg = e?.message || 'Ocurrió un error inesperado.';
@@ -1464,9 +1551,28 @@ export default function App() {
             <span className="text-[10px] 2xl:text-xs font-bold uppercase tracking-widest opacity-80 mb-0.5">Restaurante</span>
             <h1 className="text-xl 2xl:text-2xl font-black italic uppercase leading-tight">Chifa <br />Mei Hua</h1>
             <div className="mt-2">
-              <span className="inline-flex items-center gap-1 bg-[#FFD700] text-black text-[11px] 2xl:text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
-              </span>
+              {currentUser?.role === 'Administrador' ? (
+                <div className="flex bg-black/40 p-1 rounded-xl border-2 border-black gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchBranch('1')}
+                    className={`flex-1 py-1 px-1.5 rounded-lg font-black uppercase text-[10px] 2xl:text-xs transition-all cursor-pointer ${currentBranchId === '1' ? 'bg-[#FFD700] text-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'text-white/80 hover:text-white'}`}
+                  >
+                    Armenia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchBranch('2')}
+                    className={`flex-1 py-1 px-1.5 rounded-lg font-black uppercase text-[10px] 2xl:text-xs transition-all cursor-pointer ${currentBranchId === '2' ? 'bg-[#FFD700] text-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' : 'text-white/80 hover:text-white'}`}
+                  >
+                    San Rafael
+                  </button>
+                </div>
+              ) : (
+                <span className="inline-flex items-center gap-1 bg-[#FFD700] text-black text-[11px] 2xl:text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
+                </span>
+              )}
             </div>
           </div>
           <div className="absolute -bottom-6 -right-6 opacity-20 pointer-events-none">
@@ -1600,9 +1706,28 @@ export default function App() {
           <div className="flex flex-col z-10">
             <h1 className="text-lg font-black italic uppercase leading-tight">Chifa Mei Hua</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[#FFD700] text-[11px] font-black uppercase tracking-wider">
-                📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
-              </span>
+              {currentUser?.role === 'Administrador' ? (
+                <div className="flex bg-black/40 p-0.5 rounded-lg border border-black gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchBranch('1')}
+                    className={`py-0.5 px-2 rounded font-black uppercase text-[10px] cursor-pointer ${currentBranchId === '1' ? 'bg-[#FFD700] text-black' : 'text-white/80'}`}
+                  >
+                    Armenia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchBranch('2')}
+                    className={`py-0.5 px-2 rounded font-black uppercase text-[10px] cursor-pointer ${currentBranchId === '2' ? 'bg-[#FFD700] text-black' : 'text-white/80'}`}
+                  >
+                    San Rafael
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[#FFD700] text-[11px] font-black uppercase tracking-wider">
+                  📍 {currentBranchId === '2' ? 'San Rafael' : 'Armenia'}
+                </span>
+              )}
               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border border-black uppercase flex items-center gap-1 ${isOnline ? 'bg-emerald-400 text-black' : 'bg-amber-400 text-black animate-pulse'
                 }`}>
                 {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
@@ -1733,7 +1858,7 @@ export default function App() {
               rawMaterials={rawMaterials}
               currentBranchId={currentBranchId}
               currentBranchName={currentBranchName}
-              onSwitchBranch={undefined}
+              onSwitchBranch={currentUser?.role === 'Administrador' ? handleSwitchBranch : undefined}
               onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('materials') : undefined}
               onAddMaterial={async (m) => {
                 const existing = rawMaterials.find(rm => rm.id === m.id);
@@ -1783,6 +1908,7 @@ export default function App() {
               users={users}
               currentUser={currentUser}
               currentBranchId={currentBranchId}
+              onSwitchBranch={handleSwitchBranch}
               onViewReceipt={(order) => setCompletedOrder(order)}
               onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}
               onVoidOrder={handleVoidOrder}
@@ -1845,7 +1971,7 @@ export default function App() {
               drinks={drinks}
               currentBranchId={currentBranchId}
               currentBranchName={currentBranchName}
-              onSwitchBranch={undefined}
+              onSwitchBranch={currentUser?.role === 'Administrador' ? handleSwitchBranch : undefined}
               onCopyStockFromMatriz={currentUser?.role === 'Administrador' && currentBranchId === '2' ? () => handleCopyStockToBranch2('drinks') : undefined}
               onAddDrink={async (d) => {
                 const existing = drinks.find(dr => dr.id === d.id);

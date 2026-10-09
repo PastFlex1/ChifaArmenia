@@ -13,6 +13,10 @@ export function LoginView({ users, onLogin }: LoginViewProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
+  const [selectedBranch, setSelectedBranch] = useState<'1' | '2'>(() => {
+    return (localStorage.getItem('chifa_pos_terminal_branch') as '1' | '2') || '1';
+  });
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCedula = cedula.trim();
@@ -30,11 +34,15 @@ export function LoginView({ users, onLogin }: LoginViewProps) {
     }
     if (user) {
       setError('');
-      // Determinar la sucursal del perfil directamente según el usuario
-      const effectiveBranchId: string = (cleanCedula === '1714851332001' || user.branchId === '2' || user.id === '2')
-        ? '2' 
-        : (user.branchId || '1');
+      // Determinar la sucursal del perfil directamente según el usuario o selección
+      let effectiveBranchId: '1' | '2';
+      if (user.role === 'Administrador') {
+        effectiveBranchId = (cleanCedula === '1714851332001' || user.branchId === '2') ? '2' : selectedBranch;
+      } else {
+        effectiveBranchId = (user.branchId === '2' || cleanCedula === '1714851332001') ? '2' : '1';
+      }
       const effectiveBranchName = effectiveBranchId === '2' ? 'San Rafael' : 'Armenia';
+      localStorage.setItem('chifa_pos_terminal_branch', effectiveBranchId);
 
       onLogin({
         ...user,
@@ -103,15 +111,35 @@ export function LoginView({ users, onLogin }: LoginViewProps) {
               </div>
             </div>
 
-             {error && (
+            <div>
+              <label className="block text-xs font-black uppercase mb-2 opacity-60">Sucursal de Trabajo</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedBranch('1'); localStorage.setItem('chifa_pos_terminal_branch', '1'); }}
+                  className={`py-3 px-2 rounded-xl border-2 border-black font-black uppercase text-xs transition-all flex items-center justify-center gap-1 cursor-pointer ${selectedBranch === '1' ? 'bg-[#1A1A1A] text-[#FFD700] shadow-none translate-y-[1px]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'}`}
+                >
+                  📍 Armenia
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedBranch('2'); localStorage.setItem('chifa_pos_terminal_branch', '2'); }}
+                  className={`py-3 px-2 rounded-xl border-2 border-black font-black uppercase text-xs transition-all flex items-center justify-center gap-1 cursor-pointer ${selectedBranch === '2' ? 'bg-[#B91C1C] text-white shadow-none translate-y-[1px]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'}`}
+                >
+                  📍 San Rafael
+                </button>
+              </div>
+            </div>
+
+            {error && (
               <div className="text-[#B91C1C] text-sm font-bold text-center mt-2 uppercase">
                 {error}
               </div>
-             )}
+            )}
 
             <button
               type="submit"
-              className="mt-2 w-full py-4 px-4 bg-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center justify-center gap-2"
+              className="mt-2 w-full py-4 px-4 bg-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:translate-x-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               Iniciar Sesión <ArrowRight className="w-5 h-5" />
             </button>
