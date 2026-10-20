@@ -16,35 +16,45 @@ interface Props {
 }
 
 export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout }: Props) {
+  // 3. Snapshot Inmutable: Aislar datos del ticket de cualquier mutación o limpieza de estado global
+  const ticketSnapshot = React.useMemo(() => {
+    return structuredClone(order);
+  }, [order.id, order.orderNumber, order.tableNumber, order.total, order.date]);
+
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
   const [isPrinting, setIsPrinting] = useState(false);
   const isPrintingRef = React.useRef(false);
   const formatPrice = (p: number) => `USD/ ${p.toFixed(2)}`;
 
-  const appliedIvaRate = order.ivaRate || 15;
+  const appliedIvaRate = ticketSnapshot.ivaRate || 15;
   const ivaDivisor = appliedIvaRate === 8 ? 1.08 : 1.15;
 
-  const kitchenItems = order.items
+  const kitchenItems = ticketSnapshot.items
     .filter(item => item.quantity > (item.printedQuantity || 0))
     .map(item => ({
       ...item,
       quantity: item.quantity - (item.printedQuantity || 0)
     }));
 
-  const isBranch2 = order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael';
+  const isBranch2 = ticketSnapshot.branchId === '2' || ticketSnapshot.branchName === 'Sucursal 2' || ticketSnapshot.branchName === 'San Rafael';
   const branchDisplayName = isBranch2 ? 'San Rafael' : 'Armenia';
 
-  // Función para guardar el ticket en la nube de Firebase
+  // Función para guardar el ticket en la nube de Firebase con aislamiento completo
   const printViaCloudQueue = async (type: 'customer' | 'kitchen', orderToPrint: Order) => {
     try {
+      const isPreview = Boolean(orderToPrint.id?.startsWith('preview-') || (orderToPrint as any).isPreCuenta);
+      const payloadType = isPreview && type === 'customer' ? 'precuenta' : type;
       const jobBranch = (orderToPrint.branchId === '2' || orderToPrint.branchName === 'Sucursal 2' || orderToPrint.branchName === 'San Rafael') ? '2' : '1';
+      
       await addDoc(collection(db, 'print_jobs'), {
         order: {
           ...orderToPrint,
+          isPreCuenta: isPreview,
           branchId: jobBranch,
           branchName: jobBranch === '2' ? 'San Rafael' : 'Armenia'
         },
-        ticketType: type,
+        ticketType: payloadType,
+        isPreCuenta: isPreview,
         branchId: jobBranch,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -66,8 +76,8 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
     setIsPrinting(true);
     setTicketType('customer');
     
-    // 1. Enviamos a la nube
-    const success = await printViaCloudQueue('customer', order);
+    // 1. Enviamos a la nube con snapshot inmutable
+    const success = await printViaCloudQueue('customer', ticketSnapshot);
     if (success) {
       Swal.fire({
         title: 'Enviado a Cola',
@@ -98,7 +108,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
     setIsPrinting(true);
     setTicketType('kitchen');
     
-    const success = await printViaCloudQueue('kitchen', { ...order, items: kitchenItems });
+    const success = await printViaCloudQueue('kitchen', { ...ticketSnapshot, items: kitchenItems });
     if (success) {
       Swal.fire({
         title: 'Comanda en Cola',
@@ -126,14 +136,14 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
     setTicketType('customer');
     
     // Enviamos primero al cliente a la cola
-    const successCustomer = await printViaCloudQueue('customer', order);
+    const successCustomer = await printViaCloudQueue('customer', ticketSnapshot);
     
     setTimeout(async () => {
       setTicketType('kitchen');
       // Enviamos luego a cocina a la cola
       let successKitchen = false;
       if (kitchenItems.length > 0) {
-        successKitchen = await printViaCloudQueue('kitchen', { ...order, items: kitchenItems });
+        successKitchen = await printViaCloudQueue('kitchen', { ...ticketSnapshot, items: kitchenItems });
       } else {
         successKitchen = true;
       }
@@ -222,7 +232,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
           </button>
         </div>
 
-        {order.id.startsWith('preview-') && (
+        {ticketSnapshot.id.startsWith('preview-') && (
           <div className="bg-amber-100 border-b-2 border-black p-3 text-center print:hidden shrink-0">
             <span className="text-xs font-black text-amber-900 uppercase block">
               ⚠️ PRE-CUENTA / BORRADOR
@@ -271,27 +281,27 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                   <h1 className="text-2xl font-black mb-1 text-center w-full">
                     {isBranch2 ? 'CHIFA MEI HUA SAN RAFAEL' : 'CHIFA MEI HUA ARMENIA'}
                   </h1>
-                  {order.branchName && (
-                    <p className="text-xs font-black uppercase text-[#B91C1C] mb-1">📍 {order.branchName.toUpperCase()}</p>
+                  {ticketSnapshot.branchName && (
+                    <p className="text-xs font-black uppercase text-[#B91C1C] mb-1">📍 {ticketSnapshot.branchName.toUpperCase()}</p>
                   )}
                   <p className="text-xs font-bold uppercase mb-1">ALVAREZ ZAMORA RUTH GARDENIA</p>
                   <p className="text-xs font-bold uppercase mb-2">RUC: 0923809529001</p>
-                    {order.id.startsWith('preview-') ? (
+                    {ticketSnapshot.id.startsWith('preview-') ? (
                       <div className="my-1 py-1 px-2 border-2 border-black bg-amber-200 text-center font-black text-[11px] uppercase tracking-tight">
                         *** PRE-CUENTA (SOLO BORRADOR) ***
                       </div>
                     ) : (
-                      <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
+                      <p className="text-xs font-bold uppercase mb-1">PEDIDO #{String(ticketSnapshot.orderNumber).padStart(5, '0')}</p>
                     )}
-                    {order.tableNumber && (
+                    {ticketSnapshot.tableNumber && (
                       <p className="text-xs font-bold uppercase mb-1">
                         {(() => {
-                          const norm = order.tableNumber.trim().toLowerCase();
+                          const norm = ticketSnapshot.tableNumber.trim().toLowerCase();
                           if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 TIPO: PEDIDOS YA';
                           if (norm === 'rappi') return '🧡 TIPO: RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 TIPO: UBER EATS';
                           if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 TIPO: LLEVAR';
-                          return `MESA: ${order.tableNumber}`;
+                          return `MESA: ${ticketSnapshot.tableNumber}`;
                         })()}
                       </p>
                     )}
@@ -340,7 +350,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dashed divide-black/30">
-                      {order.items.map((item) => (
+                      {ticketSnapshot.items.map((item) => (
                         <tr key={item.id}>
                           <td className="py-2 align-top">{item.quantity}</td>
                           <td className="py-2 align-top pr-2">
@@ -359,11 +369,11 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 <div className="flex flex-col gap-1 mb-6 font-sans">
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">SUBTOTAL:</span>
-                    <span>{formatPrice(order.total / ivaDivisor)}</span>
+                    <span>{formatPrice(ticketSnapshot.total / ivaDivisor)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">BASE {appliedIvaRate}%:</span>
-                    <span>{formatPrice(order.total / ivaDivisor)}</span>
+                    <span>{formatPrice(ticketSnapshot.total / ivaDivisor)}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">BASE 0%:</span>
@@ -371,17 +381,17 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                   </div>
                   <div className="flex justify-between items-center text-xs font-bold">
                     <span className="uppercase">IVA {appliedIvaRate}%:</span>
-                    <span>{formatPrice(order.total - (order.total / ivaDivisor))}</span>
+                    <span>{formatPrice(ticketSnapshot.total - (ticketSnapshot.total / ivaDivisor))}</span>
                   </div>
                   <div className="flex justify-between items-end mt-2">
                     <span className="font-black uppercase tracking-widest text-sm">TOTAL:</span>
-                    <span className="font-black text-xl">{formatPrice(order.total)}</span>
+                    <span className="font-black text-xl">{formatPrice(ticketSnapshot.total)}</span>
                   </div>
                 </div>
 
                 <div className="text-center text-[10px] font-bold uppercase mt-6">
                   <p>¡Gracias por su preferencia!</p>
-                  <p className="mt-1">ATENDIDO POR: {order.sellerName ? order.sellerName : 'CAJERO'}</p>
+                  <p className="mt-1">ATENDIDO POR: {ticketSnapshot.sellerName ? ticketSnapshot.sellerName : 'CAJERO'}</p>
                   <p className="mt-4 text-[8px] opacity-60">SIST. ELABORADO POR PALMA NEXUS SOLUTIONS</p>
                 </div>
               </>
@@ -390,41 +400,41 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 {/* Kitchen Ticket */}
                 <div className="text-center mb-4">
                   <h1 className="text-xl font-black mb-1 uppercase">COMANDA</h1>
-                  {order.branchName && (
-                    <p className="text-xs font-black uppercase text-[#B91C1C]">📍 {order.branchName.toUpperCase()}</p>
+                  {ticketSnapshot.branchName && (
+                    <p className="text-xs font-black uppercase text-[#B91C1C]">📍 {ticketSnapshot.branchName.toUpperCase()}</p>
                   )}
                   <div className="border-t-2 border-black border-dashed w-full mt-2 pt-2">
-                    {order.tableNumber && (
+                    {ticketSnapshot.tableNumber && (
                       <h2 className="text-lg font-black uppercase">
                         {(() => {
-                          const norm = order.tableNumber.trim().toLowerCase();
+                          const norm = ticketSnapshot.tableNumber.trim().toLowerCase();
                           if (norm === 'pedidosya' || norm === 'pedidos ya' || norm.startsWith('pedidos')) return '🛵 PEDIDOS YA';
                           if (norm === 'rappi') return '🧡 RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 UBER EATS';
                           if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 LLEVAR';
-                          return `MESA: ${order.tableNumber}`;
+                          return `MESA: ${ticketSnapshot.tableNumber}`;
                         })()}
                       </h2>
                     )}
-                    <p className="text-sm mt-1 font-bold">PEDIDO #{String(order.orderNumber).padStart(5, '0')}</p>
+                    <p className="text-sm mt-1 font-bold">PEDIDO #{String(ticketSnapshot.orderNumber).padStart(5, '0')}</p>
                   </div>
                 </div>
 
                 <div className="mb-6 text-sm font-bold font-sans">
-                  {order.customerName && (
+                  {ticketSnapshot.customerName && (
                     <div className="flex justify-between items-center mb-2 bg-black text-white p-1.5 rounded text-xs font-black">
                       <span className="uppercase opacity-80">CLIENTE / DIR:</span>
-                      <span className="uppercase text-sm tracking-wide text-[#FFD700] truncate max-w-[65%]">{order.customerName}</span>
+                      <span className="uppercase text-sm tracking-wide text-[#FFD700] truncate max-w-[65%]">{ticketSnapshot.customerName}</span>
                     </div>
                   )}
                   <div className="flex justify-between mb-1">
                     <span className="opacity-60 uppercase">Hora:</span>
-                    <span>{new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
+                    <span>{new Date(ticketSnapshot.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
                   </div>
-                  {order.sellerName && (
+                  {ticketSnapshot.sellerName && (
                     <div className="flex justify-between mb-1">
                       <span className="opacity-60 uppercase">Mesero:</span>
-                      <span className="uppercase">{order.sellerName}</span>
+                      <span className="uppercase">{ticketSnapshot.sellerName}</span>
                     </div>
                   )}
                 </div>
@@ -445,10 +455,10 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                 </div>
 
                 <div className="mt-8 pt-4 border-t-2 border-black text-center">
-                    {order.notes && typeof order.notes === 'string' && order.notes.trim().length > 0 && (
+                    {ticketSnapshot.notes && typeof ticketSnapshot.notes === 'string' && ticketSnapshot.notes.trim().length > 0 && (
                       <div className="mb-4 text-left bg-amber-50 border-2 border-black rounded p-2">
                         <p className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-60">📝 Observaciones:</p>
-                        <p className="text-sm font-black uppercase leading-snug">{order.notes.trim()}</p>
+                        <p className="text-sm font-black uppercase leading-snug">{ticketSnapshot.notes.trim()}</p>
                       </div>
                     )}
                     <p className="font-black text-lg uppercase tracking-widest italic opacity-50">FIN DE COMANDA</p>

@@ -34,6 +34,7 @@ export interface Order {
   id: string;
   orderNumber: number;
   date: string;
+  createdAtServer?: any;
   customerName: string;
   tableNumber: string;
   items: CartItem[];
@@ -47,6 +48,7 @@ export interface Order {
   notes?: string;
   branchId?: string;
   branchName?: string;
+  isPreCuenta?: boolean;
 }
 
 export interface TableOrder {

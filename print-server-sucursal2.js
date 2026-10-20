@@ -63,7 +63,7 @@ function printTicket(jobId, order, ticketType) {
 
         writeData(INIT);
         
-        if (ticketType === 'customer') {
+        if (ticketType === 'customer' || ticketType === 'precuenta') {
           writeData(ALIGN_CENTER);
           writeData(BOLD_ON);
           writeData(textToBuffer('CHIFA MEI HUA SAN RAFAEL'));
@@ -73,7 +73,15 @@ function printTicket(jobId, order, ticketType) {
           writeData(textToBuffer('--------------------------------'));
           
           writeData(ALIGN_LEFT);
-          writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          const isPreCuenta = ticketType === 'precuenta' || order.isPreCuenta || (order.id && String(order.id).startsWith('preview-'));
+          if (isPreCuenta) {
+            writeData(BOLD_ON);
+            writeData(textToBuffer('*** PRE-CUENTA (BORRADOR) ***'));
+            writeData(textToBuffer('*** NO VALIDO COMO FACTURA ***'));
+            writeData(BOLD_OFF);
+          } else {
+            writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          }
           writeData(textToBuffer(`FECHA: ${new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour12: false })}`));
           
           if (order.tableNumber) {

@@ -64,7 +64,7 @@ function printTicket(jobId, order, ticketType) {
 
         writeData(INIT);
         
-        if (ticketType === 'customer') {
+        if (ticketType === 'customer' || ticketType === 'precuenta') {
           writeData(ALIGN_CENTER);
           writeData(BOLD_ON);
           writeData(textToBuffer('CHIFA MEI HUA ARMENIA'));
@@ -78,7 +78,16 @@ function printTicket(jobId, order, ticketType) {
           
           writeData(ALIGN_LEFT);
           writeData(textToBuffer(`IMPRESO: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`));
-          writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          
+          const isPreCuenta = ticketType === 'precuenta' || order.isPreCuenta || (order.id && String(order.id).startsWith('preview-'));
+          if (isPreCuenta) {
+            writeData(BOLD_ON);
+            writeData(textToBuffer('*** PRE-CUENTA (BORRADOR) ***'));
+            writeData(textToBuffer('*** NO VALIDO COMO FACTURA ***'));
+            writeData(BOLD_OFF);
+          } else {
+            writeData(textToBuffer(`PEDIDO #${String(order.orderNumber).padStart(5, '0')}`));
+          }
           if (order.tableNumber) {
             const normT = order.tableNumber.trim().toLowerCase();
             if (normT === 'pedidosya' || normT === 'pedidos ya' || normT.startsWith('pedidos')) writeData(textToBuffer('TIPO: PEDIDOS YA'));

@@ -14,9 +14,9 @@ import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import Swal from 'sweetalert2';
-import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, SyncState, LatencyStatus } from './utils/syncManager';
+import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, getTableDocId, SyncState, LatencyStatus } from './utils/syncManager';
 import { setupKeepAlive } from './utils/keepAlive';
 
 export default function App() {
@@ -38,6 +38,8 @@ export default function App() {
   const [activeTableId, setActiveTableId] = useState<string | null>(null);
   // Rastreo de mesas liberadas/cobradas localmente para evitar alertarse a uno mismo
   const locallyProcessedTablesRef = useRef<Map<string, number>>(new Map());
+  // Registro de idempotencia en memoria por cobro (mesa + items + total)
+  const processedCheckoutsRef = useRef<Map<string, number>>(new Map());
 
   // Sync State & Latency Monitor
   const [syncState, setSyncState] = useState<SyncState>('synced');
@@ -272,18 +274,28 @@ export default function App() {
   // Limpiar carrito si la mesa activa fue liberada remotamente en ESTA MISMA sucursal
   useEffect(() => {
     const handleTableFreed = (e: any) => {
-      const detail = typeof e.detail === 'object' ? e.detail : { tableNumber: e.detail, branchId: undefined };
+      const detail = typeof e.detail === 'object' ? e.detail : { tableNumber: e.detail, branchId: undefined, freedTimestamp: undefined };
       const freedTable = detail.tableNumber;
-      const freedBranch = detail.branchId;
+      const freedBranch = detail.branchId || currentBranchId;
+      const freedTimestamp = detail.freedTimestamp || Date.now();
 
       if (freedBranch && freedBranch !== currentBranchId) return;
 
       const normFreed = (freedTable || '').trim().toLowerCase();
-      const localKey = `${freedBranch || currentBranchId}_${normFreed}`;
-      const localTime = locallyProcessedTablesRef.current.get(localKey);
+      const localDocId = getTableDocId(freedBranch, normFreed);
+      const localTime = locallyProcessedTablesRef.current.get(localDocId);
       if (localTime && Date.now() - localTime < 15000) {
         // Esta acción fue realizada por esta misma computadora, no mostrar alerta ni reiniciar
         return;
+      }
+
+      // 3. Blindaje: Si el borrador local es más reciente que el evento de liberación, no borrar
+      const localDraft = getLocalDraft(freedTable, freedBranch);
+      if (localDraft) {
+        const draftTs = localDraft.updatedAtTimestamp || (localDraft.updatedAt ? new Date(localDraft.updatedAt).getTime() : 0);
+        if (draftTs > freedTimestamp) {
+          return;
+        }
       }
 
       if (activeTableId && activeTableId.trim().toLowerCase() === normFreed) {
@@ -308,7 +320,7 @@ export default function App() {
     };
     window.addEventListener('tableFreed', handleTableFreed);
     return () => window.removeEventListener('tableFreed', handleTableFreed);
-  }, [activeTableId, currentView, currentBranchId]);
+  }, [activeTableId, currentView, currentBranchId, cart.length]);
 
   // Firebase Realtime Subscriptions
   useEffect(() => {
@@ -379,7 +391,7 @@ export default function App() {
           if (tNum) {
             const removedTimestamp = removedData?.updatedAtTimestamp || (removedData?.updatedAt ? new Date(removedData.updatedAt).getTime() : Date.now());
             markTableAsFreed(tNum, removedTimestamp, tBranch);
-            const localKey = `${tBranch}_${tNum.trim().toLowerCase()}`;
+            const localKey = getTableDocId(tBranch, tNum);
             const localTime = locallyProcessedTablesRef.current.get(localKey);
             if (!localTime || Date.now() - localTime > 15000) {
               window.dispatchEvent(new CustomEvent('tableFreed', { detail: { tableNumber: tNum, branchId: tBranch, freedTimestamp: removedTimestamp } }));
@@ -433,9 +445,10 @@ export default function App() {
     const now = new Date();
 
     if (timeRange === 'day') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      startOfDay.setHours(0, 0, 0, 0);
-      qOrders = query(collection(db, 'orders'), where('date', '>=', startOfDay.toISOString()));
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      // Tolerancia de 3 horas hacia atrás para evitar pérdida de ventas si el reloj de un cliente tiene desfase
+      const queryStart = new Date(startOfDay.getTime() - 3 * 60 * 60 * 1000);
+      qOrders = query(collection(db, 'orders'), where('date', '>=', queryStart.toISOString()));
     } else if (timeRange === 'week') {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       sevenDaysAgo.setHours(0, 0, 0, 0);
@@ -477,7 +490,7 @@ export default function App() {
             if (normT && normT !== 'para llevar' && normT !== 'llevar' && normT !== 'domicilio') {
               const orderTime = new Date(order.date).getTime();
               markTableAsFreed(order.tableNumber, orderTime, orderBranch);
-              const localKey = `${orderBranch}_${normT}`;
+              const localKey = getTableDocId(orderBranch, normT);
               const localTime = locallyProcessedTablesRef.current.get(localKey);
               const isLocal = localTime && Date.now() - localTime < 15000;
               if (!isLocal && orderBranch === currentBranchId && activeTableId && activeTableId.trim().toLowerCase() === order.tableNumber.trim().toLowerCase()) {
@@ -830,6 +843,22 @@ export default function App() {
     setCurrentView('pos');
   };
 
+  const handleSwitchOrderChannel = (targetChannel: string) => {
+    if (activeTableId) return;
+
+    const norm = targetChannel.trim().toLowerCase();
+    if (!targetChannel || norm === '' || norm === 'mesa') {
+      setCart([]);
+      setTableNumber('');
+      setCustomerName('');
+      setOrderNotes('');
+      setActiveTableId(null);
+      return;
+    }
+
+    handleTableClick(targetChannel);
+  };
+
   const handleDeleteTable = async (tableNum: string) => {
     if (currentUser?.role !== 'Administrador') {
       Swal.fire({
@@ -853,17 +882,16 @@ export default function App() {
     });
 
     if (result.isConfirmed) {
+      const docId = getTableDocId(currentBranchId, tableNum);
       if (tableNum) {
-        locallyProcessedTablesRef.current.set(`${currentBranchId}_${tableNum.trim().toLowerCase()}`, Date.now());
+        locallyProcessedTablesRef.current.set(docId, Date.now());
       }
       try {
         const batch = writeBatch(db);
-        const docId = `${currentBranchId}_${tableNum}`;
 
         // Devolver inventario si la comanda tenía productos ingresados
         const tableToDelete = activeTables.find(t => 
-          (t.branchId || '1') === currentBranchId && 
-          (t.tableNumber || '').trim().toLowerCase() === tableNum.trim().toLowerCase()
+          getTableDocId(t.branchId || '1', t.tableNumber) === docId
         );
         const oldItems = tableToDelete?.items || [];
         if (oldItems.length > 0) {
@@ -872,15 +900,15 @@ export default function App() {
             const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
             if (rm.stock !== origStock) {
               if (currentBranchId === '2') {
-                batch.update(doc(db, 'rawMaterials', rm.id), {
+                batch.set(doc(db, 'rawMaterials', rm.id), {
                   'stocks.2': rm.stock,
                   stock_sucursal2: rm.stock
-                });
+                }, { merge: true });
               } else {
-                batch.update(doc(db, 'rawMaterials', rm.id), {
+                batch.set(doc(db, 'rawMaterials', rm.id), {
                   stock: rm.stock,
                   'stocks.1': rm.stock
-                });
+                }, { merge: true });
               }
             }
           });
@@ -888,15 +916,15 @@ export default function App() {
             const origStock = getStockForBranch(drinks[index], currentBranchId);
             if (drink.stock !== origStock) {
               if (currentBranchId === '2') {
-                batch.update(doc(db, 'drinks', drink.id), {
+                batch.set(doc(db, 'drinks', drink.id), {
                   'stocks.2': drink.stock,
                   stock_sucursal2: drink.stock
-                });
+                }, { merge: true });
               } else {
-                batch.update(doc(db, 'drinks', drink.id), {
+                batch.set(doc(db, 'drinks', drink.id), {
                   stock: drink.stock,
                   'stocks.1': drink.stock
-                });
+                }, { merge: true });
               }
             }
           });
@@ -1077,23 +1105,65 @@ export default function App() {
 
     setIsCheckingOut(true);
 
+    const targetTableId = (activeTableId || tableNumber).trim();
+    const targetDocId = targetTableId ? getTableDocId(currentBranchId, targetTableId) : '';
+    const now = Date.now();
+
+    // 4. Clave de Idempotencia por Pedido / Mesa en el Cobro
+    const cartSignature = cart
+      .map(item => `${item.menuItem.id || item.menuItem.name}_${item.quantity}`)
+      .sort()
+      .join('|');
+    const idempotencyKey = `${currentBranchId}_${targetTableId.toLowerCase()}_${cartTotal.toFixed(2)}_${cartSignature}`;
+
+    const lastProcessedTime = processedCheckoutsRef.current.get(idempotencyKey);
+    if (lastProcessedTime && (now - lastProcessedTime) < 60000) {
+      Swal.fire({
+        title: 'Cobro en Proceso o Duplicado',
+        text: 'Este pedido ya está siendo procesado o se cobró hace menos de un minuto.',
+        icon: 'warning',
+        confirmButtonColor: '#000'
+      });
+      setIsCheckingOut(false);
+      return;
+    }
+
+    // Bloqueo inmediato en memoria contra doble-clic o concurrencia
+    processedCheckoutsRef.current.set(idempotencyKey, now);
+
+    // Limpieza periódica de claves antiguas (> 2 minutos)
+    for (const [key, timestamp] of processedCheckoutsRef.current.entries()) {
+      if (now - timestamp > 120000) {
+        processedCheckoutsRef.current.delete(key);
+      }
+    }
+
     try {
-      const targetTableId = (activeTableId || tableNumber).trim();
-      if (targetTableId) {
-        locallyProcessedTablesRef.current.set(`${currentBranchId}_${targetTableId.toLowerCase()}`, Date.now());
+      if (targetDocId) {
+        locallyProcessedTablesRef.current.set(targetDocId, Date.now());
       }
 
-      // 1. Registrar procesamiento local para evitar rebotes de eventos propios
-
-      // 2. Protección contra cobros duplicados en menos de 10 segundos (misma mesa/canal y mismo total en la misma sucursal)
-      const tenSecAgo = Date.now() - 10000;
+      // Validación de duplicados en orders con ventana de 60 segundos
+      const sixtySecAgo = now - 60000;
       const recentDuplicate = orders.find(o => {
         const oTime = new Date(o.date).getTime();
         const oBranch = o.branchId || '1';
-        return oBranch === currentBranchId &&
-               oTime >= tenSecAgo &&
-               o.total === cartTotal &&
-               (o.tableNumber || '').trim().toLowerCase() === targetTableId.toLowerCase();
+        if (oBranch !== currentBranchId || oTime < sixtySecAgo || Math.abs(o.total - cartTotal) > 0.01) {
+          return false;
+        }
+        const oTableMatch = targetDocId 
+          ? getTableDocId(oBranch, o.tableNumber || '') === targetDocId 
+          : (o.tableNumber || '').trim().toLowerCase() === targetTableId.toLowerCase();
+        if (!oTableMatch) return false;
+
+        if (o.items && o.items.length > 0) {
+          const oSignature = o.items
+            .map(item => `${item.menuItem.id || item.menuItem.name}_${item.quantity}`)
+            .sort()
+            .join('|');
+          return oSignature === cartSignature;
+        }
+        return true;
       });
 
       if (recentDuplicate) {
@@ -1109,22 +1179,46 @@ export default function App() {
         return;
       }
 
-      const oldItems = targetTableId ? (activeTables.find(t => (t.branchId || '1') === currentBranchId && t.tableNumber === targetTableId)?.items || []) : [];
-      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart);
+      // 5. Auditar y corregir el Doble Descuento de Inventario
+      const matchedActive = targetDocId 
+        ? activeTables.find(t => getTableDocId(t.branchId || '1', t.tableNumber) === targetDocId)
+        : undefined;
+      const oldItems = matchedActive ? matchedActive.items : [];
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart, currentBranchId);
 
       const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
       const profit = cartTotal - totalCost;
 
-      const maxOrder = orders.reduce((max, o) => Math.max(max, o.orderNumber || 0), 0);
-      const nextOrderNumber = Math.max(orderCounter, maxOrder) + 1;
+      // 1. Garantizar que orderNumber (Correlativo) NUNCA se repita
+      // Consulta fresca a Firestore si estamos online
+      let remoteCounter = 0;
+      try {
+        if (navigator.onLine) {
+          const counterDoc = await getDoc(doc(db, 'counters', 'orders'));
+          if (counterDoc.exists()) {
+            remoteCounter = Number(counterDoc.data()?.count) || 0;
+          }
+        }
+      } catch (err) {
+        console.warn("No se pudo obtener el contador remoto fresco:", err);
+      }
 
-      // Always record the exact moment of payment/checkout as the sale date
+      const maxOrder = orders.reduce((max, o) => Math.max(max, Number(o.orderNumber) || 0), 0);
+      const currentCount = Math.max(remoteCounter, Number(orderCounter) || 0, maxOrder);
+      const nextOrderNumber = currentCount + 1;
+
+      // Actualización optimista inmediata en memoria para evitar que la siguiente orden en la misma caja reutilice el número
+      setOrderCounter(nextOrderNumber);
+
+      // Prevenir colisión de IDs con sufijo aleatorio y timestamp del servidor
+      const orderId = `${currentBranchId}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const orderDate = new Date().toISOString();
 
       const newOrder: Order = {
-        id: Date.now().toString(),
+        id: orderId,
         orderNumber: nextOrderNumber,
         date: orderDate,
+        createdAtServer: serverTimestamp(),
         customerName: customerName.trim(),
         tableNumber: targetTableId,
         notes: orderNotes.trim() || undefined,
@@ -1144,21 +1238,22 @@ export default function App() {
       };
 
       const batch = writeBatch(db);
-      batch.set(doc(db, 'counters', 'orders'), { count: increment(1) }, { merge: true });
+      // Blindar actualización de contador atómica y consistente con el número emitido
+      batch.set(doc(db, 'counters', 'orders'), { count: nextOrderNumber }, { merge: true });
 
       newRawMaterials.forEach((rm, index) => {
         const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
         if (rm.stock !== origStock) {
           if (currentBranchId === '2') {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               'stocks.2': rm.stock,
               stock_sucursal2: rm.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               stock: rm.stock,
               'stocks.1': rm.stock
-            });
+            }, { merge: true });
           }
         }
       });
@@ -1167,39 +1262,28 @@ export default function App() {
         const origStock = getStockForBranch(drinks[index], currentBranchId);
         if (drink.stock !== origStock) {
           if (currentBranchId === '2') {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               'stocks.2': drink.stock,
               stock_sucursal2: drink.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               stock: drink.stock,
               'stocks.1': drink.stock
-            });
+            }, { merge: true });
           }
         }
       });
 
       batch.set(doc(db, 'orders', newOrder.id), newOrder);
       if (targetTableId) {
-        const docId = `${currentBranchId}_${targetTableId}`;
+        const docId = targetDocId || getTableDocId(currentBranchId, targetTableId);
         batch.delete(doc(db, 'active_tables', docId));
         if (currentBranchId === '1') {
           batch.delete(doc(db, 'active_tables', targetTableId));
         }
-        // Limpiar también por si coincide en minúsculas o ID asignado
-        const matchedActive = activeTables.find(t =>
-          (t.branchId || '1') === currentBranchId &&
-          t.tableNumber.trim().toLowerCase() === targetTableId.trim().toLowerCase()
-        );
-        if (matchedActive) {
-          batch.delete(doc(db, 'active_tables', `${currentBranchId}_${matchedActive.tableNumber}`));
-          if (matchedActive.id) {
-            batch.delete(doc(db, 'active_tables', matchedActive.id));
-          }
-          if (currentBranchId === '1') {
-            batch.delete(doc(db, 'active_tables', matchedActive.tableNumber));
-          }
+        if (matchedActive && matchedActive.id && matchedActive.id !== docId) {
+          batch.delete(doc(db, 'active_tables', matchedActive.id));
         }
         batch.set(doc(db, 'freed_tables', docId), {
           tableNumber: targetTableId,
@@ -1211,8 +1295,9 @@ export default function App() {
       }
 
       await batch.commit();
-      setOrderCounter(nextOrderNumber);
-      setCompletedOrder(newOrder);
+
+      // 3. Snapshot Inmutable y Limpieza Estricta
+      setCompletedOrder(structuredClone(newOrder));
       if (targetTableId) {
         markTableAsFreed(targetTableId, undefined, currentBranchId);
       }
@@ -1220,6 +1305,7 @@ export default function App() {
       setActiveTableId(null);
     } catch (e: any) {
       console.error("Error confirming order:", e);
+      processedCheckoutsRef.current.delete(idempotencyKey);
       const errMsg = e?.message || 'Ocurrió un error inesperado en Firestore.';
       Swal.fire({
         title: 'Error al confirmar el pedido',
@@ -1260,14 +1346,14 @@ export default function App() {
     if (!result.isConfirmed) return;
 
     setIsCheckingOut(true);
-    if (targetTableId) {
-      locallyProcessedTablesRef.current.set(`${currentBranchId}_${targetTableId.toLowerCase()}`, Date.now());
+    const targetDocId = targetTableId ? getTableDocId(currentBranchId, targetTableId) : '';
+    if (targetDocId) {
+      locallyProcessedTablesRef.current.set(targetDocId, Date.now());
     }
 
     try {
       const previousTable = activeTables.find(t => 
-        (t.branchId || '1') === currentBranchId && 
-        (t.tableNumber || '').trim().toLowerCase() === targetTableId.trim().toLowerCase()
+        getTableDocId(t.branchId || '1', t.tableNumber) === targetDocId
       );
       const oldItems = previousTable ? previousTable.items : [];
 
@@ -1278,15 +1364,15 @@ export default function App() {
         const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
         if (rm.stock !== origStock) {
           if (currentBranchId === '2') {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               'stocks.2': rm.stock,
               stock_sucursal2: rm.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               stock: rm.stock,
               'stocks.1': rm.stock
-            });
+            }, { merge: true });
           }
         }
       });
@@ -1294,20 +1380,20 @@ export default function App() {
         const origStock = getStockForBranch(drinks[index], currentBranchId);
         if (drink.stock !== origStock) {
           if (currentBranchId === '2') {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               'stocks.2': drink.stock,
               stock_sucursal2: drink.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               stock: drink.stock,
               'stocks.1': drink.stock
-            });
+            }, { merge: true });
           }
         }
       });
       if (targetTableId && !isNonTableType(targetTableId)) {
-        const docId = `${currentBranchId}_${targetTableId}`;
+        const docId = targetDocId;
         batch.delete(doc(db, 'active_tables', docId));
         if (currentBranchId === '1') {
           batch.delete(doc(db, 'active_tables', targetTableId));
@@ -1369,16 +1455,17 @@ export default function App() {
       notes: orderNotes.trim() || undefined,
       branchId: currentBranchId,
       branchName: currentBranchName,
-      items: [...cart],
+      items: structuredClone(cart),
       total: cartTotal,
       totalCost,
       profit: cartTotal - totalCost,
       ivaRate: isHolidayIva ? 8 : 15,
       sellerId: currentUser?.id,
       sellerName: currentUser?.name,
-      status: 'active'
+      status: 'active',
+      isPreCuenta: true
     };
-    setCompletedOrder(mockOrder);
+    setCompletedOrder(structuredClone(mockOrder));
   };
 
   const handleCloseReceipt = () => {
@@ -1428,15 +1515,15 @@ export default function App() {
         const origStock = getStockForBranch(rawMaterials[index], orderBranchId);
         if (rm.stock !== origStock) {
           if (orderBranchId === '2') {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               'stocks.2': rm.stock,
               stock_sucursal2: rm.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'rawMaterials', rm.id), {
+            batch.set(doc(db, 'rawMaterials', rm.id), {
               stock: rm.stock,
               'stocks.1': rm.stock
-            });
+            }, { merge: true });
           }
         }
       });
@@ -1445,20 +1532,20 @@ export default function App() {
         const origStock = getStockForBranch(drinks[index], orderBranchId);
         if (drink.stock !== origStock) {
           if (orderBranchId === '2') {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               'stocks.2': drink.stock,
               stock_sucursal2: drink.stock
-            });
+            }, { merge: true });
           } else {
-            batch.update(doc(db, 'drinks', drink.id), {
+            batch.set(doc(db, 'drinks', drink.id), {
               stock: drink.stock,
               'stocks.1': drink.stock
-            });
+            }, { merge: true });
           }
         }
       });
 
-      batch.update(doc(db, 'orders', order.id), { status: 'voided' });
+      batch.set(doc(db, 'orders', order.id), { status: 'voided' }, { merge: true });
 
       await batch.commit();
 
@@ -2070,8 +2157,8 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId && isNonTableType(tableNumber)) {
-                    setTableNumber('');
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('');
                   }
                 }}
                 className={`pos-order-type-btn flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${!isNonTableType(tableNumber)
@@ -2085,7 +2172,9 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId) setTableNumber('Llevar');
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Llevar');
+                  }
                 }}
                 className={`pos-order-type-btn flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar')
                   ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
@@ -2098,7 +2187,9 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId) setTableNumber('PedidosYa');
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('PedidosYa');
+                  }
                 }}
                 className={`pos-order-type-btn flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
                   ? 'bg-[#B91C1C] text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] animate-pulse'
@@ -2111,7 +2202,9 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId) setTableNumber('Rappi');
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Rappi');
+                  }
                 }}
                 className={`pos-order-type-btn flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${tableNumber.trim().toLowerCase() === 'rappi'
                   ? 'bg-orange-600 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
@@ -2124,7 +2217,9 @@ export default function App() {
                 type="button"
                 disabled={Boolean(activeTableId)}
                 onClick={() => {
-                  if (!activeTableId) setTableNumber('Uber Eats');
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Uber Eats');
+                  }
                 }}
                 className={`pos-order-type-btn flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
                   ? 'bg-emerald-950 text-emerald-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
@@ -2406,6 +2501,85 @@ export default function App() {
           </div>
 
           <div className="p-4 bg-[#F7F4F0] border-b-2 border-black z-10 shrink-0 flex flex-col gap-2">
+            {/* Selector Rápido de Tipo de Comanda Móvil */}
+            <div className="flex flex-wrap gap-1 bg-[#EAE6DF] p-1 rounded-xl border-2 border-black">
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('');
+                  }
+                }}
+                className={`flex-1 min-w-[55px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${!isNonTableType(tableNumber)
+                  ? 'bg-[#1A1A1A] text-[#FFD700] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                  }`}
+              >
+                <UtensilsCrossed className="w-3 h-3" /> Mesa
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Llevar');
+                  }
+                }}
+                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'domicilio' || tableNumber.trim().toLowerCase() === 'para llevar' || tableNumber.trim().toLowerCase() === 'llevar')
+                  ? 'bg-emerald-700 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                  }`}
+              >
+                <ShoppingBag className="w-3 h-3" /> Llevar
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('PedidosYa');
+                  }
+                }}
+                className={`flex-1 min-w-[65px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'pedidosya' || tableNumber.trim().toLowerCase() === 'pedidos ya')
+                  ? 'bg-[#B91C1C] text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] animate-pulse'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                  }`}
+              >
+                <Bike className="w-3 h-3" /> PedidosYa
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Rappi');
+                  }
+                }}
+                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${tableNumber.trim().toLowerCase() === 'rappi'
+                  ? 'bg-orange-600 text-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                  }`}
+              >
+                🧡 Rappi
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(activeTableId)}
+                onClick={() => {
+                  if (!activeTableId) {
+                    handleSwitchOrderChannel('Uber Eats');
+                  }
+                }}
+                className={`flex-1 min-w-[50px] py-1 px-1 rounded-lg font-black text-[10px] uppercase flex items-center justify-center gap-0.5 transition-all ${(tableNumber.trim().toLowerCase() === 'uber' || tableNumber.trim().toLowerCase() === 'uber eats')
+                  ? 'bg-emerald-950 text-emerald-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+                  : 'text-slate-700 hover:bg-slate-200 disabled:opacity-50'
+                  }`}
+              >
+                🟢 Uber
+              </button>
+            </div>
+
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <UtensilsCrossed className="h-4 w-4 opacity-50 text-black" />

@@ -164,7 +164,13 @@ export function SalesView({
     const startOfYearMs = startOfYear.getTime();
 
     if (timeRange === 'day') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfDayMs);
+      filtered = filtered.filter(o => {
+        const oDate = new Date(o.date);
+        const isSameCalendarDay = oDate.getFullYear() === now.getFullYear() &&
+                                  oDate.getMonth() === now.getMonth() &&
+                                  oDate.getDate() === now.getDate();
+        return isSameCalendarDay || oDate.getTime() >= startOfDayMs;
+      });
     } else if (timeRange === 'week') {
       filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfWeekMs);
     } else if (timeRange === 'year') {
