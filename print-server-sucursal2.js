@@ -9,7 +9,7 @@ import path from 'path';
 const TARGET_BRANCH_ID = '2'; // 2 = Sucursal 2
 const PRINTER_IP_KITCHEN = '192.168.10.17'; // IP Impresora Cocina Sucursal 2
 const CAJA_IS_USB = true; // Impresora de caja USB compartida
-const PRINTER_SHARED_NAME_CAJA = process.env.PRINTER_SHARED_NAME_CAJA || 'LR2000'; // Nombre compartido en Windows (ej: LR2000 o caja)
+const PRINTER_SHARED_NAME_CAJA = process.env.PRINTER_SHARED_NAME_CAJA || 'caja'; // Nombre compartido en Windows (ej: caja o LR2000)
 const PRINTER_PORT = 9100;
 
 // Configuración de Firebase
@@ -204,8 +204,8 @@ function printTicket(jobId, order, ticketType) {
            
            const candidateNames = Array.from(new Set([
              PRINTER_SHARED_NAME_CAJA,
-             'LR2000',
              'caja',
+             'LR2000',
              'CAJA',
              'lr2000'
            ].filter(Boolean)));
@@ -220,21 +220,20 @@ function printTicket(jobId, order, ticketType) {
            const tryPrint = (index) => {
              if (index >= targets.length) {
                try { fs.unlinkSync(tempFile); } catch(e){}
-               reject(new Error(`Error enviando a USB. Por favor confirma en Windows -> Propiedades de la impresora -> pestaña Compartir -> Marcar 'Compartir esta impresora' y colocar nombre 'LR2000' o 'caja'.`));
+               reject(new Error(`Error enviando a USB. Por favor confirma en Windows -> Propiedades de la impresora -> pestaña Compartir -> Marcar 'Compartir esta impresora' y colocar nombre 'caja' o 'LR2000'.`));
                return;
              }
 
              const target = targets[index];
              const command = `copy /b "${tempFile}" "${target}"`;
-             console.log(`[+] Intentando imprimir por USB (${index + 1}/${targets.length}): ${command}`);
 
              exec(command, (error) => {
                if (error) {
-                 console.log(`[-] Fallo en ${target}, probando siguiente alternativa...`);
+                 // Intentar siguiente alternativa de forma transparente
                  tryPrint(index + 1);
                } else {
                  try { fs.unlinkSync(tempFile); } catch(e){}
-                 console.log(`[OK] Ticket enviado con exito a ${target}`);
+                 console.log(`[OK] Ticket enviado con éxito a ${target}`);
                  resolve();
                }
              });
