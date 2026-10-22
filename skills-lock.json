@@ -11,7 +11,7 @@
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-ai-logic-basics/SKILL.md",
-      "computedHash": "fe39bfe474dfeb7e7e5b6834c6f8fbf43b38437a292216d3b590ef0f6feb5d48"
+      "computedHash": "6f29d33071169ad5b178bfa184569a016518f40691eacccbf655f753041d725b"
     },
     "firebase-app-hosting-basics": {
       "source": "firebase/agent-skills",

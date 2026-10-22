@@ -9,7 +9,7 @@ import path from 'path';
 const TARGET_BRANCH_ID = process.env.BRANCH_ID || '1'; // '1' = Matriz, '2' = Sucursal 2
 const PRINTER_IP_KITCHEN = process.env.PRINTER_IP_KITCHEN || '192.168.100.60'; // IP de Cocina
 const CAJA_IS_USB = process.env.CAJA_IS_USB !== 'false'; // true si la impresora de caja es USB compartida
-const PRINTER_SHARED_NAME_CAJA = process.env.PRINTER_SHARED_NAME_CAJA || 'caja'; // Nombre compartido en Windows
+const PRINTER_SHARED_NAME_CAJA = process.env.PRINTER_SHARED_NAME_CAJA || 'LR2000'; // Nombre compartido en Windows (ej: LR2000 o caja)
 const PRINTER_IP_CUSTOMER = process.env.PRINTER_IP_CUSTOMER || '192.168.100.X'; // IP si no es USB
 const PRINTER_PORT = 9100;
 
@@ -196,22 +196,31 @@ function printTicket(jobId, order, ticketType) {
         const finalBuffer = Buffer.concat(buffers);
 
         // LOGICA DE IMPRESIÓN (USB COMPARTIDA O RED TCP)
-        if (ticketType === 'customer' && CAJA_IS_USB) {
+        if ((ticketType === 'customer' || ticketType === 'precuenta') && CAJA_IS_USB) {
            const tempFile = path.join(process.cwd(), `ticket_${jobId}.bin`);
            fs.writeFileSync(tempFile, finalBuffer);
            
            const computerName = process.env.COMPUTERNAME || '127.0.0.1';
            
-           const targets = [
-             `\\\\127.0.0.1\\${PRINTER_SHARED_NAME_CAJA}`,
-             `\\\\localhost\\${PRINTER_SHARED_NAME_CAJA}`,
-             `\\\\${computerName}\\${PRINTER_SHARED_NAME_CAJA}`
-           ];
+           const candidateNames = Array.from(new Set([
+             process.env.PRINTER_SHARED_NAME_CAJA,
+             'LR2000',
+             'caja',
+             'CAJA',
+             'lr2000'
+           ].filter(Boolean)));
+
+           const targets = [];
+           candidateNames.forEach(name => {
+             targets.push(`\\\\127.0.0.1\\${name}`);
+             targets.push(`\\\\localhost\\${name}`);
+             targets.push(`\\\\${computerName}\\${name}`);
+           });
 
            const tryPrint = (index) => {
              if (index >= targets.length) {
                try { fs.unlinkSync(tempFile); } catch(e){}
-               reject(new Error(`Error enviando a USB. Por favor confirma en Windows -> Propiedades de la impresora -> pestaña Compartir -> Marcar 'Compartir esta impresora' y colocar nombre '${PRINTER_SHARED_NAME_CAJA}'.`));
+               reject(new Error(`Error enviando a USB. Por favor confirma en Windows -> Propiedades de la impresora -> pestaña Compartir -> Marcar 'Compartir esta impresora' y colocar nombre 'LR2000' o 'caja'.`));
                return;
              }
 
@@ -236,25 +245,42 @@ function printTicket(jobId, order, ticketType) {
         } else {
            // IMPRESION POR RED IP (COCINA)
            const TARGET_IP = ticketType === 'kitchen' ? PRINTER_IP_KITCHEN : PRINTER_IP_CUSTOMER;
+           
+           if (!TARGET_IP || TARGET_IP.includes('X')) {
+             reject(new Error(`IP de impresora no configurada (${TARGET_IP}). Revisa la configuración de red.`));
+             return;
+           }
+
            console.log(`[+] Conectando a IP ${TARGET_IP}:${PRINTER_PORT} para ticket de ${ticketType}...`);
            
            const client = new net.Socket();
-           client.setTimeout(3000);
+           let isResolved = false;
 
-           client.on('timeout', () => {
-             client.destroy();
-             reject(new Error(`Timeout de conexión a la impresora ${TARGET_IP}. ¿Está encendida?`));
-           });
+           const timer = setTimeout(() => {
+             if (!isResolved) {
+               isResolved = true;
+               client.destroy();
+               reject(new Error(`Timeout de conexión a la impresora ${TARGET_IP}. ¿Está encendida y conectada a la red?`));
+             }
+           }, 4000);
 
            client.on('error', (err) => {
-             client.destroy();
-             reject(err);
+             if (!isResolved) {
+               isResolved = true;
+               clearTimeout(timer);
+               client.destroy();
+               reject(err);
+             }
            });
 
            client.connect(PRINTER_PORT, TARGET_IP, function() {
-             client.write(finalBuffer);
-             client.end();
-             resolve();
+             if (!isResolved) {
+               isResolved = true;
+               clearTimeout(timer);
+               client.write(finalBuffer);
+               client.end();
+               resolve();
+             }
            });
         }
         
