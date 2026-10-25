@@ -38,8 +38,8 @@ export function MateriaPrimaView({
       id: editingId || Date.now().toString(),
       name: formData.name,
       unit: formData.unit,
-      stock: Number(formData.stock),
-      unitCost: Number(formData.unitCost)
+      stock: Number(parseFloat(formData.stock).toFixed(2)),
+      unitCost: Number(parseFloat(formData.unitCost).toFixed(2))
     });
 
     setFormData({ ...formData, name: '', stock: '', unitCost: '' });
@@ -52,8 +52,8 @@ export function MateriaPrimaView({
     setFormData({
       name: item.name,
       unit: item.unit,
-      stock: branchStock.toString(),
-      unitCost: item.unitCost.toString()
+      stock: Number(branchStock || 0).toFixed(2),
+      unitCost: Number(item.unitCost || 0).toFixed(2)
     });
   };
 
@@ -80,8 +80,8 @@ export function MateriaPrimaView({
         return [
           m.name,
           m.unit,
-          `$${m.unitCost.toFixed(2)}`,
-          s.toString(),
+          `$${Number(m.unitCost || 0).toFixed(2)}`,
+          Number(s || 0).toFixed(2),
           `$${(s * m.unitCost).toFixed(2)}`
         ];
       })
@@ -139,12 +139,12 @@ export function MateriaPrimaView({
                 </label>
                 <input 
                   type="number" 
-                  step="1"
+                  step="0.01"
                   min="0"
                   required
-                  placeholder="0"
+                  placeholder="0.00"
                   value={formData.stock}
-                  onChange={e => setFormData({ ...formData, stock: e.target.value.replace(/[^0-9]/g, '') })}
+                  onChange={e => setFormData({ ...formData, stock: e.target.value })}
                   className="w-full px-3 py-3 bg-[#F7F4F0] border-2 border-black rounded-xl text-sm font-bold focus:outline-none focus:bg-white uppercase transition-colors hide-spin-button"
                 />
               </div>
@@ -279,7 +279,7 @@ export function MateriaPrimaView({
                        <div>
                          <span className="block text-[10px] uppercase font-bold text-[#B91C1C]">Stock {currentBranchId === '2' ? 'San Rafael' : 'Matriz'}</span>
                          <span className="font-black text-xl text-black">
-                           {Number.isInteger(currentStock) ? currentStock : (Math.round(currentStock * 1000) / 1000)} <span className="text-sm opacity-60">{item.unit}</span>
+                           {Number(currentStock || 0).toFixed(2)} <span className="text-sm opacity-60">{item.unit}</span>
                          </span>
                        </div>
                        <div>
@@ -288,8 +288,8 @@ export function MateriaPrimaView({
                        </div>
                      </div>
                      <div className="bg-slate-100 p-2 rounded-lg border border-slate-300 text-[10px] font-bold flex justify-between items-center text-slate-700">
-                       <span>📍 Matriz: <strong className={currentBranchId === '1' ? 'text-[#B91C1C]' : 'text-black'}>{matrizStock} {item.unit}</strong></span>
-                       <span>📍 San Rafael: <strong className={currentBranchId === '2' ? 'text-[#B91C1C]' : 'text-black'}>{suc2Stock} {item.unit}</strong></span>
+                       <span>📍 Matriz: <strong className={currentBranchId === '1' ? 'text-[#B91C1C]' : 'text-black'}>{Number(matrizStock || 0).toFixed(2)} {item.unit}</strong></span>
+                       <span>📍 San Rafael: <strong className={currentBranchId === '2' ? 'text-[#B91C1C]' : 'text-black'}>{Number(suc2Stock || 0).toFixed(2)} {item.unit}</strong></span>
                      </div>
                   </div>
                 );

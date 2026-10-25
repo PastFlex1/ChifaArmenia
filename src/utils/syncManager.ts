@@ -336,45 +336,73 @@ export async function syncTableToFirestore(
 
     const processItems = (items: CartItem[], multiplier: number) => {
       items.forEach(cartItem => {
-        if (cartItem.menuItem.isCombo) {
-          const combo = combos.find(c => c.id === cartItem.menuItem.id);
+        const itemQty = Number(cartItem.quantity) || 1;
+        const isCombo = Boolean(
+          cartItem.menuItem?.isCombo || 
+          combos.some(c => c.id === cartItem.menuItem?.id || (cartItem.menuItem?.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+        );
+        const isDrink = Boolean(
+          cartItem.menuItem?.isDrink === true ||
+          cartItem.menuItem?.category === 'Bebidas' ||
+          cartItem.menuItem?.category === 'Licor' ||
+          cartItem.menuItem?.category === 'Jugos' ||
+          cartItem.menuItem?.category === 'Bebidas Calientes' ||
+          drinks.some(d => d.id === cartItem.menuItem?.id || (cartItem.menuItem?.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+        );
+
+        if (isCombo) {
+          const combo = combos.find(c => c.id === cartItem.menuItem?.id || (cartItem.menuItem?.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()));
           if (combo) {
-            combo.items.forEach((cItem: any) => {
-              if (cItem.type === 'drink') {
-                const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
+            combo.items?.forEach((cItem: any) => {
+              const cQty = Number(cItem.quantity) || 1;
+              const isComboDrink = Boolean(
+                cItem.type === 'drink' ||
+                drinks.some(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()))
+              );
+              if (isComboDrink) {
+                const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
                 if (drinkIndex >= 0) {
-                  newDrinks[drinkIndex].stock = Math.max(0, newDrinks[drinkIndex].stock - (cItem.quantity * cartItem.quantity * multiplier));
+                  const newVal = newDrinks[drinkIndex].stock - (cQty * itemQty * multiplier);
+                  newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                 }
               } else {
-                const dish = dishes.find(d => d.id === cItem.itemId);
-                if (dish) {
-                   dish.ingredients?.forEach(ing => {
-                     const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-                     if (rmIndex >= 0) {
-                       const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cItem.quantity * cartItem.quantity * multiplier);
-                       newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
-                     }
-                   });
+                const dish = dishes.find(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
+                if (dish && dish.ingredients) {
+                  dish.ingredients.forEach(ing => {
+                    const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+                    if (rmIndex >= 0) {
+                      const ingQty = Number(ing.quantity) || 0;
+                      const newVal = newRawMaterials[rmIndex].stock - (ingQty * cQty * itemQty * multiplier);
+                      newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                    }
+                  });
                 }
               }
             });
           }
-        } else if (cartItem.menuItem.isDrink) {
-          const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
+        } else if (isDrink) {
+          const drinkIndex = newDrinks.findIndex(d => 
+            d.id === cartItem.menuItem?.id || 
+            (cartItem.menuItem?.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
+          );
           if (drinkIndex >= 0) {
-            const newVal = newDrinks[drinkIndex].stock - (cartItem.quantity * multiplier);
+            const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
             newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
           }
         } else {
-          const dish = dishes.find(d => d.id === cartItem.menuItem.id);
-          if (dish) {
-             dish.ingredients?.forEach(ing => {
-               const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
-               if (rmIndex >= 0) {
-                 const newVal = newRawMaterials[rmIndex].stock - (ing.quantity * cartItem.quantity * multiplier);
-                 newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
-               }
-             });
+          const dish = dishes.find(d => 
+            d.id === cartItem.menuItem?.id || 
+            (cartItem.menuItem?.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
+          );
+          if (dish && dish.ingredients) {
+            dish.ingredients.forEach(ing => {
+              const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
+              if (rmIndex >= 0) {
+                const ingQty = Number(ing.quantity) || 0;
+                const newVal = newRawMaterials[rmIndex].stock - (ingQty * itemQty * multiplier);
+                newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+              }
+            });
           }
         }
       });
@@ -386,34 +414,50 @@ export async function syncTableToFirestore(
     const batch = writeBatch(db);
     
     // 4. Blindar inventario con set(... { merge: true }) para evitar abortos de batch
-    newRawMaterials.forEach((rm, index) => {
-      const origStock = getStockForBranch(rawMaterials[index], branchId);
+    newRawMaterials.forEach((rm) => {
+      const origRm = rawMaterials.find(r => r.id === rm.id);
+      const origStock = origRm ? getStockForBranch(origRm, branchId) : 0;
       if (rm.stock !== origStock) {
+        const currentStocks = origRm?.stocks || {};
         if (branchId === '2') {
           batch.set(doc(db, 'rawMaterials', rm.id), {
-            'stocks.2': rm.stock,
-            stock_sucursal2: rm.stock
+            stock_sucursal2: rm.stock,
+            stocks: {
+              ...currentStocks,
+              '2': rm.stock
+            }
           }, { merge: true });
         } else {
           batch.set(doc(db, 'rawMaterials', rm.id), {
             stock: rm.stock,
-            'stocks.1': rm.stock
+            stocks: {
+              ...currentStocks,
+              '1': rm.stock
+            }
           }, { merge: true });
         }
       }
     });
-    newDrinks.forEach((drink, index) => {
-      const origStock = getStockForBranch(drinks[index], branchId);
+    newDrinks.forEach((drink) => {
+      const origDrink = drinks.find(d => d.id === drink.id);
+      const origStock = origDrink ? getStockForBranch(origDrink, branchId) : 0;
       if (drink.stock !== origStock) {
+        const currentStocks = origDrink?.stocks || {};
         if (branchId === '2') {
           batch.set(doc(db, 'drinks', drink.id), {
-            'stocks.2': drink.stock,
-            stock_sucursal2: drink.stock
+            stock_sucursal2: drink.stock,
+            stocks: {
+              ...currentStocks,
+              '2': drink.stock
+            }
           }, { merge: true });
         } else {
           batch.set(doc(db, 'drinks', drink.id), {
             stock: drink.stock,
-            'stocks.1': drink.stock
+            stocks: {
+              ...currentStocks,
+              '1': drink.stock
+            }
           }, { merge: true });
         }
       }

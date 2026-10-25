@@ -66,6 +66,27 @@ export interface TableOrder {
   customerName?: string;
 }
 
+export interface StaffConsumptionItem {
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export interface StaffConsumption {
+  id: string;
+  workerId: string;
+  workerName: string;
+  workerCedula?: string;
+  date: string;
+  items: StaffConsumptionItem[];
+  total: number;
+  notes?: string;
+  status: 'pending' | 'deducted';
+  branchId: string;
+  branchName?: string;
+  createdAtServer?: any;
+}
+
 export interface RawMaterial {
   id: string;
   name: string;
@@ -102,7 +123,7 @@ export interface Drink {
 
 // Función utilitaria para resolver el stock de cualquier producto según la sucursal
 export function getStockForBranch(
-  item: { stock?: number; stocks?: Record<string, number>; stock_sucursal2?: number },
+  item: { stock?: number; stocks?: Record<string, number>; stock_sucursal2?: number; [key: string]: any },
   branchId: string = '1'
 ): number {
   if (!item) return 0;
@@ -113,13 +134,22 @@ export function getStockForBranch(
     if (item.stocks && typeof item.stocks['2'] === 'number') {
       return item.stocks['2'];
     }
+    if (typeof item['stocks.2'] === 'number') {
+      return item['stocks.2'];
+    }
     return 0;
   }
   // Matriz (Sucursal 1)
+  if (typeof item.stock === 'number') {
+    return item.stock;
+  }
   if (item.stocks && typeof item.stocks['1'] === 'number') {
     return item.stocks['1'];
   }
-  return typeof item.stock === 'number' ? item.stock : 0;
+  if (typeof item['stocks.1'] === 'number') {
+    return item['stocks.1'];
+  }
+  return 0;
 }
 
 export interface ComboItem {

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ShoppingBag, Search, Plus, Minus, Trash2, User, UtensilsCrossed, LineChart, Users, LogOut, Store, Package, ChefHat, Wine, X, Layers, LayoutGrid, Printer, Wifi, WifiOff, Bike } from 'lucide-react';
 import { CATEGORIES } from './data';
-import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder, getStockForBranch } from './types';
+import { Category, CartItem, Order, MenuItem, RawMaterial, Dish, Drink, UserAccount, TableOrder, StaffConsumption, getStockForBranch } from './types';
 import { ReceiptModal } from './components/ReceiptModal';
 import { MateriaPrimaView } from './components/MateriaPrimaView';
 import { DrinkInventoryView } from './components/DrinkInventoryView';
@@ -13,6 +13,7 @@ import { UsersView } from './components/UsersView';
 import { WelcomeModal } from './components/WelcomeModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
+import { StaffConsumptionView } from './components/StaffConsumptionView';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import Swal from 'sweetalert2';
@@ -24,7 +25,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [users, setUsers] = useState<UserAccount[]>([]);
-  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'combos' | 'ventas' | 'usuarios' | 'mesas'>('pos');
+  const [currentView, setCurrentView] = useState<'pos' | 'materia_prima' | 'inv_comida' | 'inv_bebidas' | 'combos' | 'ventas' | 'usuarios' | 'mesas' | 'consumo_personal'>('pos');
+  const [staffConsumptions, setStaffConsumptions] = useState<StaffConsumption[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category | 'Todos'>('Todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -418,6 +420,12 @@ export default function App() {
     const unsubFreedTables = () => {};
     if (!loadedState.freed_tables) { loadedState.freed_tables = true; checkComplete(); }
 
+    const unsubConsumptions = onSnapshot(collection(db, 'staff_consumptions'), snapshot => {
+      setStaffConsumptions(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as StaffConsumption)));
+    }, (error) => {
+      console.error("Error fetching staff consumptions:", error);
+    });
+
     const counterRef = doc(db, 'counters', 'orders');
     const unsubCounter = onSnapshot(counterRef, (docSnap: any) => {
       if (docSnap.exists()) {
@@ -436,6 +444,7 @@ export default function App() {
       unsubTables();
       unsubFreedTables();
       unsubCounter();
+      unsubConsumptions();
     };
   }, []);
 
@@ -896,38 +905,7 @@ export default function App() {
         const oldItems = tableToDelete?.items || [];
         if (oldItems.length > 0) {
           const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, [], currentBranchId);
-          newRawMaterials.forEach((rm, index) => {
-            const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
-            if (rm.stock !== origStock) {
-              if (currentBranchId === '2') {
-                batch.set(doc(db, 'rawMaterials', rm.id), {
-                  'stocks.2': rm.stock,
-                  stock_sucursal2: rm.stock
-                }, { merge: true });
-              } else {
-                batch.set(doc(db, 'rawMaterials', rm.id), {
-                  stock: rm.stock,
-                  'stocks.1': rm.stock
-                }, { merge: true });
-              }
-            }
-          });
-          newDrinks.forEach((drink, index) => {
-            const origStock = getStockForBranch(drinks[index], currentBranchId);
-            if (drink.stock !== origStock) {
-              if (currentBranchId === '2') {
-                batch.set(doc(db, 'drinks', drink.id), {
-                  'stocks.2': drink.stock,
-                  stock_sucursal2: drink.stock
-                }, { merge: true });
-              } else {
-                batch.set(doc(db, 'drinks', drink.id), {
-                  stock: drink.stock,
-                  'stocks.1': drink.stock
-                }, { merge: true });
-              }
-            }
-          });
+          applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, currentBranchId);
 
           // Actualizar estado local inmediatamente
           setRawMaterials(prev => prev.map(rm => {
@@ -984,23 +962,39 @@ export default function App() {
 
     const processItems = (items: CartItem[], multiplier: number) => {
       items.forEach(cartItem => {
+        if (!cartItem?.menuItem) return;
         const itemQty = Number(cartItem.quantity) || 1;
-        const isCombo = cartItem.menuItem.isCombo || combos.some(c => c.id === cartItem.menuItem.id);
-        const isDrink = cartItem.menuItem.isDrink || drinks.some(d => d.id === cartItem.menuItem.id);
+        const isCombo = Boolean(
+          cartItem.menuItem.isCombo ||
+          combos.some(c => c.id === cartItem.menuItem.id || (cartItem.menuItem.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+        );
+        const isExplicitlyNotDrink = cartItem.menuItem.isDrink === false || cartItem.menuItem.id?.startsWith('__delivery');
+        const isDrink = !isExplicitlyNotDrink && Boolean(
+          cartItem.menuItem.isDrink === true ||
+          cartItem.menuItem.category === 'Bebidas' ||
+          cartItem.menuItem.category === 'Licor' ||
+          cartItem.menuItem.category === 'Jugos' ||
+          cartItem.menuItem.category === 'Bebidas Calientes' ||
+          drinks.some(d => d.id === cartItem.menuItem.id || (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+        );
 
         if (isCombo) {
-          const combo = combos.find(c => c.id === cartItem.menuItem.id);
+          const combo = combos.find(c => c.id === cartItem.menuItem.id || (cartItem.menuItem.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()));
           if (combo) {
-            combo.items.forEach((cItem: any) => {
+            combo.items?.forEach((cItem: any) => {
               const cQty = Number(cItem.quantity) || 1;
-              if (cItem.type === 'drink' || drinks.some(d => d.id === cItem.itemId)) {
-                const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId);
+              const isComboDrink = Boolean(
+                cItem.type === 'drink' ||
+                drinks.some(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()))
+              );
+              if (isComboDrink) {
+                const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
                 if (drinkIndex >= 0) {
                   const newVal = newDrinks[drinkIndex].stock - (cQty * itemQty * multiplier);
                   newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
                 }
               } else {
-                const dish = dishes.find(d => d.id === cItem.itemId);
+                const dish = dishes.find(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
                 if (dish && dish.ingredients) {
                   dish.ingredients.forEach(ing => {
                     const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
@@ -1015,13 +1009,19 @@ export default function App() {
             });
           }
         } else if (isDrink) {
-          const drinkIndex = newDrinks.findIndex(d => d.id === cartItem.menuItem.id);
+          const drinkIndex = newDrinks.findIndex(d => 
+            d.id === cartItem.menuItem.id || 
+            (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
+          );
           if (drinkIndex >= 0) {
             const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
             newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
           }
         } else {
-          const dish = dishes.find(d => d.id === cartItem.menuItem.id);
+          const dish = dishes.find(d => 
+            d.id === cartItem.menuItem.id || 
+            (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
+          );
           if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
               const rmIndex = newRawMaterials.findIndex(rm => rm.id === ing.rawMaterialId);
@@ -1040,6 +1040,51 @@ export default function App() {
     processItems(newItems, 1);  // Descontar items nuevos (- stock)
 
     return { newRawMaterials, newDrinks };
+  };
+
+  const applyStockUpdatesToBatch = (
+    batch: any,
+    newRawMaterials: RawMaterial[],
+    newDrinks: Drink[],
+    branchId: '1' | '2' | string
+  ) => {
+    newRawMaterials.forEach((rm) => {
+      const origRm = rawMaterials.find(r => r.id === rm.id);
+      const origStock = origRm ? getStockForBranch(origRm, branchId) : 0;
+      if (rm.stock !== origStock) {
+        const currentStocks = origRm?.stocks || {};
+        if (branchId === '2') {
+          batch.set(doc(db, 'rawMaterials', rm.id), {
+            stock_sucursal2: rm.stock,
+            stocks: { ...currentStocks, '2': rm.stock }
+          }, { merge: true });
+        } else {
+          batch.set(doc(db, 'rawMaterials', rm.id), {
+            stock: rm.stock,
+            stocks: { ...currentStocks, '1': rm.stock }
+          }, { merge: true });
+        }
+      }
+    });
+
+    newDrinks.forEach((drink) => {
+      const origDrink = drinks.find(d => d.id === drink.id);
+      const origStock = origDrink ? getStockForBranch(origDrink, branchId) : 0;
+      if (drink.stock !== origStock) {
+        const currentStocks = origDrink?.stocks || {};
+        if (branchId === '2') {
+          batch.set(doc(db, 'drinks', drink.id), {
+            stock_sucursal2: drink.stock,
+            stocks: { ...currentStocks, '2': drink.stock }
+          }, { merge: true });
+        } else {
+          batch.set(doc(db, 'drinks', drink.id), {
+            stock: drink.stock,
+            stocks: { ...currentStocks, '1': drink.stock }
+          }, { merge: true });
+        }
+      }
+    });
   };
 
   const handleSaveTable = async (customCart?: CartItem[] | any) => {
@@ -1241,39 +1286,7 @@ export default function App() {
       // Blindar actualización de contador atómica y consistente con el número emitido
       batch.set(doc(db, 'counters', 'orders'), { count: nextOrderNumber }, { merge: true });
 
-      newRawMaterials.forEach((rm, index) => {
-        const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
-        if (rm.stock !== origStock) {
-          if (currentBranchId === '2') {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              'stocks.2': rm.stock,
-              stock_sucursal2: rm.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              stock: rm.stock,
-              'stocks.1': rm.stock
-            }, { merge: true });
-          }
-        }
-      });
-
-      newDrinks.forEach((drink, index) => {
-        const origStock = getStockForBranch(drinks[index], currentBranchId);
-        if (drink.stock !== origStock) {
-          if (currentBranchId === '2') {
-            batch.set(doc(db, 'drinks', drink.id), {
-              'stocks.2': drink.stock,
-              stock_sucursal2: drink.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'drinks', drink.id), {
-              stock: drink.stock,
-              'stocks.1': drink.stock
-            }, { merge: true });
-          }
-        }
-      });
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, currentBranchId);
 
       batch.set(doc(db, 'orders', newOrder.id), newOrder);
       if (targetTableId) {
@@ -1360,38 +1373,7 @@ export default function App() {
       const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, [], currentBranchId);
 
       const batch = writeBatch(db);
-      newRawMaterials.forEach((rm, index) => {
-        const origStock = getStockForBranch(rawMaterials[index], currentBranchId);
-        if (rm.stock !== origStock) {
-          if (currentBranchId === '2') {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              'stocks.2': rm.stock,
-              stock_sucursal2: rm.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              stock: rm.stock,
-              'stocks.1': rm.stock
-            }, { merge: true });
-          }
-        }
-      });
-      newDrinks.forEach((drink, index) => {
-        const origStock = getStockForBranch(drinks[index], currentBranchId);
-        if (drink.stock !== origStock) {
-          if (currentBranchId === '2') {
-            batch.set(doc(db, 'drinks', drink.id), {
-              'stocks.2': drink.stock,
-              stock_sucursal2: drink.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'drinks', drink.id), {
-              stock: drink.stock,
-              'stocks.1': drink.stock
-            }, { merge: true });
-          }
-        }
-      });
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, currentBranchId);
       if (targetTableId && !isNonTableType(targetTableId)) {
         const docId = targetDocId;
         batch.delete(doc(db, 'active_tables', docId));
@@ -1511,39 +1493,7 @@ export default function App() {
 
       const batch = writeBatch(db);
 
-      newRawMaterials.forEach((rm, index) => {
-        const origStock = getStockForBranch(rawMaterials[index], orderBranchId);
-        if (rm.stock !== origStock) {
-          if (orderBranchId === '2') {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              'stocks.2': rm.stock,
-              stock_sucursal2: rm.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'rawMaterials', rm.id), {
-              stock: rm.stock,
-              'stocks.1': rm.stock
-            }, { merge: true });
-          }
-        }
-      });
-
-      newDrinks.forEach((drink, index) => {
-        const origStock = getStockForBranch(drinks[index], orderBranchId);
-        if (drink.stock !== origStock) {
-          if (orderBranchId === '2') {
-            batch.set(doc(db, 'drinks', drink.id), {
-              'stocks.2': drink.stock,
-              stock_sucursal2: drink.stock
-            }, { merge: true });
-          } else {
-            batch.set(doc(db, 'drinks', drink.id), {
-              stock: drink.stock,
-              'stocks.1': drink.stock
-            }, { merge: true });
-          }
-        }
-      });
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, orderBranchId);
 
       batch.set(doc(db, 'orders', order.id), { status: 'voided' }, { merge: true });
 
@@ -1598,6 +1548,142 @@ export default function App() {
     }
   };
 
+  const handleAddStaffConsumption = async (consumption: StaffConsumption) => {
+    await setDoc(doc(db, 'staff_consumptions', consumption.id), consumption);
+  };
+
+  const handleUpdateStaffConsumptionStatus = async (id: string, status: 'pending' | 'deducted') => {
+    await setDoc(doc(db, 'staff_consumptions', id), { status }, { merge: true });
+  };
+
+  const handleDeleteStaffConsumption = async (id: string) => {
+    await deleteDoc(doc(db, 'staff_consumptions', id));
+  };
+
+  const handleSettleWorkerConsumptions = async (workerId: string) => {
+    const workerPending = staffConsumptions.filter(c => c.workerId === workerId && c.status === 'pending');
+    if (workerPending.length === 0) return;
+    const batch = writeBatch(db);
+    workerPending.forEach(c => {
+      batch.set(doc(db, 'staff_consumptions', c.id), { status: 'deducted' }, { merge: true });
+    });
+    await batch.commit();
+  };
+
+  const handleChargeToStaff = async () => {
+    if (cart.length === 0 || isCheckingOut) return;
+    
+    const branchWorkersList = users.filter(user => {
+      if (user.id === '1') return currentBranchId === '1';
+      if (user.id === '2' || user.cedula === '1714851332001') return currentBranchId === '2';
+      const uBranch = user.branchId || '1';
+      return uBranch === currentBranchId;
+    });
+
+    if (branchWorkersList.length === 0) {
+      Swal.fire('Atención', 'No hay trabajadores registrados en esta sucursal.', 'warning');
+      return;
+    }
+
+    const inputOptions: Record<string, string> = {};
+    branchWorkersList.forEach(w => {
+      inputOptions[w.id] = `${w.name} (${w.role})`;
+    });
+
+    const { value: selectedWorkerId } = await Swal.fire({
+      title: 'Descontar a Trabajador',
+      text: `Selecciona el trabajador al que se le cargará este consumo (${cartTotal.toFixed(2)}) para descontar de su sueldo:`,
+      input: 'select',
+      inputOptions,
+      inputPlaceholder: 'Selecciona un trabajador...',
+      showCancelButton: true,
+      confirmButtonColor: '#1A1A1A',
+      cancelButtonColor: '#777',
+      confirmButtonText: 'Cargar Consumo',
+      cancelButtonText: 'Cancelar',
+      inputValidator: (value) => {
+        if (!value) return 'Debes seleccionar un trabajador';
+        return null;
+      }
+    });
+
+    if (!selectedWorkerId) return;
+    const worker = branchWorkersList.find(w => w.id === selectedWorkerId);
+    if (!worker) return;
+
+    setIsCheckingOut(true);
+    try {
+      const targetTableId = (activeTableId || tableNumber).trim();
+      const targetDocId = targetTableId ? getTableDocId(currentBranchId, targetTableId) : '';
+      
+      const previousTable = activeTables.find(t => 
+        getTableDocId(t.branchId || '1', t.tableNumber) === targetDocId
+      );
+      const oldItems = previousTable ? previousTable.items : [];
+      const { newRawMaterials, newDrinks } = getNetStockChanges(oldItems, cart, currentBranchId);
+
+      const batch = writeBatch(db);
+
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, currentBranchId);
+
+      if (targetTableId) {
+        const docId = targetDocId || getTableDocId(currentBranchId, targetTableId);
+        batch.delete(doc(db, 'active_tables', docId));
+        if (currentBranchId === '1') {
+          batch.delete(doc(db, 'active_tables', targetTableId));
+        }
+        batch.set(doc(db, 'freed_tables', docId), {
+          tableNumber: targetTableId,
+          branchId: currentBranchId,
+          freedAt: new Date().toISOString(),
+          freedAtTimestamp: Date.now(),
+          reason: 'staff_consumption'
+        });
+      }
+
+      const consumptionId = `staff_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const newStaffConsumption: StaffConsumption = {
+        id: consumptionId,
+        workerId: worker.id,
+        workerName: worker.name,
+        workerCedula: worker.cedula,
+        date: new Date().toISOString(),
+        items: cart.map(i => ({
+          name: i.menuItem.name,
+          quantity: i.quantity,
+          price: i.menuItem.price
+        })),
+        total: Number(cartTotal.toFixed(2)),
+        notes: (orderNotes || '').trim() || (targetTableId ? `Mesa: ${targetTableId}` : 'POS Directo'),
+        status: 'pending',
+        branchId: currentBranchId,
+        branchName: currentBranchName
+      };
+
+      batch.set(doc(db, 'staff_consumptions', consumptionId), newStaffConsumption);
+
+      await batch.commit();
+
+      if (targetTableId) {
+        markTableAsFreed(targetTableId, undefined, currentBranchId);
+      }
+      clearCart();
+      setActiveTableId(null);
+
+      Swal.fire({
+        title: '¡Consumo Registrado!',
+        text: `Se cargaron ${newStaffConsumption.total.toFixed(2)} a ${worker.name} para descontar de su sueldo. El inventario ha sido actualizado.`,
+        icon: 'success',
+        confirmButtonColor: '#1A1A1A'
+      });
+    } catch (err: any) {
+      console.error('Error al registrar consumo a trabajador:', err);
+      Swal.fire('Error', 'No se pudo registrar el consumo a trabajador.', 'error');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
   const formatPrice = (price: number) => `USD/ ${price.toFixed(2)}`;
 
   if (!isDbLoaded) {
@@ -1622,7 +1708,8 @@ export default function App() {
 
   const canView = (view: string) => {
     if (currentUser.role === 'Administrador') return true;
-    if (currentUser.role === 'Cajero' || currentUser.role === 'Mesero') return view === 'pos' || view === 'mesas';
+    if (currentUser.role === 'Cajero') return view === 'pos' || view === 'mesas' || view === 'consumo_personal';
+    if (currentUser.role === 'Mesero') return view === 'pos' || view === 'mesas';
     return false;
   };
 
@@ -1748,6 +1835,15 @@ export default function App() {
                 }`}
             >
               <Users className="w-5 h-5" /> Personal
+            </button>
+          )}
+          {canView('consumo_personal') && (
+            <button
+              onClick={() => setCurrentView('consumo_personal')}
+              className={`pos-nav-item w-full text-left px-3.5 py-2.5 2xl:py-3 rounded-xl font-black uppercase text-xs flex items-center gap-3 transition-all ${currentView === 'consumo_personal' ? 'bg-[#FFD700] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] translate-x-1' : 'hover:bg-slate-100 text-slate-600'
+                }`}
+            >
+              <UtensilsCrossed className="w-5 h-5" /> Consumo Personal
             </button>
           )}
         </nav>
@@ -2003,6 +2099,20 @@ export default function App() {
               setTimeRange={setTimeRange}
               customDateRange={customDateRange}
               setCustomDateRange={setCustomDateRange}
+            />
+          ) : currentView === 'consumo_personal' ? (
+            <StaffConsumptionView
+              consumptions={staffConsumptions}
+              users={users}
+              posItems={posItems}
+              currentUser={currentUser}
+              currentBranchId={currentBranchId}
+              currentBranchName={currentBranchName}
+              onSwitchBranch={currentUser?.role === 'Administrador' ? handleSwitchBranch : undefined}
+              onAddConsumption={handleAddStaffConsumption}
+              onUpdateConsumptionStatus={handleUpdateStaffConsumptionStatus}
+              onDeleteConsumption={handleDeleteStaffConsumption}
+              onSettleWorkerConsumptions={handleSettleWorkerConsumptions}
             />
           ) : currentView === 'usuarios' ? (
             <UsersView
@@ -2436,6 +2546,14 @@ export default function App() {
                       {isCheckingOut ? 'Procesando...' : 'Cobrar Directo'}
                     </button>
                   </div>
+                  <button
+                    onClick={handleChargeToStaff}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="pos-cart-action-btn w-full py-2 px-2 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black rounded-xl font-black uppercase text-[11px] tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    title="Cargar comanda al consumo de un trabajador para descontar de su sueldo"
+                  >
+                    <UtensilsCrossed className="w-3.5 h-3.5" /> Descontar a Trabajador
+                  </button>
                 </div>
               )}
             </div>
@@ -2721,22 +2839,31 @@ export default function App() {
                 )}
               </>
             ) : (
-              <div className="flex gap-2">
+              <>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                  >
+                    Guardar Mesa
+                  </button>
+                  <button
+                    onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
+                    disabled={cart.length === 0 || isCheckingOut}
+                    className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
+                  >
+                    {isCheckingOut ? '...' : 'Cobrar Directo'}
+                  </button>
+                </div>
                 <button
-                  onClick={() => { handleSaveTable(); setIsMobileCartOpen(false); }}
+                  onClick={() => { handleChargeToStaff(); setIsMobileCartOpen(false); }}
                   disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-emerald-600 text-white border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 hover:bg-emerald-700"
+                  className="w-full mt-2 py-2.5 px-2 bg-amber-400 text-black border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  Guardar Mesa
+                  <UtensilsCrossed className="w-3.5 h-3.5" /> Descontar a Trabajador
                 </button>
-                <button
-                  onClick={() => { handleCheckout(); setIsMobileCartOpen(false); }}
-                  disabled={cart.length === 0 || isCheckingOut}
-                  className="flex-1 py-3 px-2 bg-black text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0"
-                >
-                  {isCheckingOut ? '...' : 'Cobrar Directo'}
-                </button>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -2784,6 +2911,12 @@ export default function App() {
           <button onClick={() => setCurrentView('usuarios')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'usuarios' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
             <Users className="w-5 h-5" />
             <span className="text-[9px] font-black uppercase tracking-wider">Cajeros</span>
+          </button>
+        )}
+        {canView('consumo_personal') && (
+          <button onClick={() => setCurrentView('consumo_personal')} className={`flex flex-col items-center justify-center min-w-[64px] h-full gap-1 active:scale-95 transition-transform ${currentView === 'consumo_personal' ? 'text-[#B91C1C]' : 'opacity-40 hover:opacity-80'}`}>
+            <UtensilsCrossed className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Consumos</span>
           </button>
         )}
       </nav>
