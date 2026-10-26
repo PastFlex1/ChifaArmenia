@@ -962,24 +962,43 @@ export default function App() {
 
     const processItems = (items: CartItem[], multiplier: number) => {
       items.forEach(cartItem => {
-        if (!cartItem?.menuItem) return;
-        const itemQty = Number(cartItem.quantity) || 1;
+        const mItem: any = (cartItem as any)?.menuItem || cartItem;
+        if (!mItem) return;
+        const itemQty = Number(cartItem.quantity) || Number(mItem.quantity) || 1;
+
+        // Si es delivery / costo de envío, no afecta stock de inventario
+        if (
+          mItem.id?.startsWith('__delivery') ||
+          mItem.category === 'Delivery' ||
+          (mItem.name && (
+            mItem.name.toLowerCase().includes('servicio a domicilio') ||
+            mItem.name.toLowerCase().includes('costo de envio') ||
+            mItem.name.toLowerCase().includes('delivery')
+          ))
+        ) {
+          return;
+        }
+
         const isCombo = Boolean(
-          cartItem.menuItem.isCombo ||
-          combos.some(c => c.id === cartItem.menuItem.id || (cartItem.menuItem.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+          mItem.isCombo ||
+          combos.some(c => c.id === mItem.id || (mItem.name && c.name?.trim().toLowerCase() === mItem.name?.trim().toLowerCase()))
         );
-        const isExplicitlyNotDrink = cartItem.menuItem.isDrink === false || cartItem.menuItem.id?.startsWith('__delivery');
-        const isDrink = !isExplicitlyNotDrink && Boolean(
-          cartItem.menuItem.isDrink === true ||
-          cartItem.menuItem.category === 'Bebidas' ||
-          cartItem.menuItem.category === 'Licor' ||
-          cartItem.menuItem.category === 'Jugos' ||
-          cartItem.menuItem.category === 'Bebidas Calientes' ||
-          drinks.some(d => d.id === cartItem.menuItem.id || (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()))
+
+        // Identificar bebida de forma robusta por ID, nombre exacto en inventario, categoría o flag
+        const drinkIndexById = mItem.id ? newDrinks.findIndex(d => d.id === mItem.id) : -1;
+        const drinkIndexByName = mItem.name 
+          ? newDrinks.findIndex(d => d.name?.trim().toLowerCase() === mItem.name?.trim().toLowerCase()) 
+          : -1;
+        const matchedDrinkIndex = drinkIndexById >= 0 ? drinkIndexById : drinkIndexByName;
+
+        const isDrink = !isCombo && (
+          matchedDrinkIndex >= 0 ||
+          mItem.isDrink === true ||
+          ['bebidas', 'licor', 'jugos', 'bebidas calientes', 'gaseosas', 'cervezas', 'refrescos'].includes((mItem.category || '').trim().toLowerCase())
         );
 
         if (isCombo) {
-          const combo = combos.find(c => c.id === cartItem.menuItem.id || (cartItem.menuItem.name && c.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase()));
+          const combo = combos.find(c => c.id === mItem.id || (mItem.name && c.name?.trim().toLowerCase() === mItem.name?.trim().toLowerCase()));
           if (combo) {
             combo.items?.forEach((cItem: any) => {
               const cQty = Number(cItem.quantity) || 1;
@@ -1009,18 +1028,20 @@ export default function App() {
             });
           }
         } else if (isDrink) {
-          const drinkIndex = newDrinks.findIndex(d => 
-            d.id === cartItem.menuItem.id || 
-            (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
-          );
+          const drinkIndex = matchedDrinkIndex >= 0 
+            ? matchedDrinkIndex 
+            : newDrinks.findIndex(d => 
+                (mItem.id && d.id === mItem.id) || 
+                (mItem.name && d.name?.trim().toLowerCase() === mItem.name?.trim().toLowerCase())
+              );
           if (drinkIndex >= 0) {
             const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
             newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
           }
         } else {
           const dish = dishes.find(d => 
-            d.id === cartItem.menuItem.id || 
-            (cartItem.menuItem.name && d.name?.trim().toLowerCase() === cartItem.menuItem.name?.trim().toLowerCase())
+            (mItem.id && d.id === mItem.id) || 
+            (mItem.name && d.name?.trim().toLowerCase() === mItem.name?.trim().toLowerCase())
           );
           if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
@@ -1501,6 +1522,9 @@ export default function App() {
 
       // Actualizar estado local inmediatamente para retroalimentación visual instantánea
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'voided' } : o));
+      if (completedOrder?.id === orderId) {
+        setCompletedOrder(prev => prev ? { ...prev, status: 'voided' } : null);
+      }
       setRawMaterials(prev => prev.map(rm => {
         const updated = newRawMaterials.find(n => n.id === rm.id);
         if (!updated) return rm;
@@ -1541,6 +1565,64 @@ export default function App() {
       Swal.fire({
         title: 'Error al anular el pedido',
         text: navigator.onLine ? `Detalle: ${errMsg}` : 'Error de conexión. Revisa tu internet.',
+        icon: 'error',
+        confirmButtonColor: '#000'
+      });
+      throw e;
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    try {
+      let order = orders.find(o => o.id === orderId);
+      if (!order) {
+        const snap = await getDoc(doc(db, 'orders', orderId));
+        if (snap.exists()) {
+          order = { ...snap.data(), id: snap.id } as Order;
+        }
+      }
+
+      // Si la orden no ha sido anulada previamente, restituir su inventario antes de eliminar
+      if (order && order.status !== 'voided') {
+        const orderBranchId: '1' | '2' = (order.branchId === '2' || order.branchName === 'Sucursal 2' || order.branchName === 'San Rafael') ? '2' : '1';
+        const { newRawMaterials, newDrinks } = getNetStockChanges(order.items || [], [], orderBranchId);
+        const batch = writeBatch(db);
+        applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, orderBranchId);
+        batch.delete(doc(db, 'orders', orderId));
+        await batch.commit();
+
+        // Actualizar inventario local
+        setRawMaterials(prev => prev.map(rm => {
+          const updated = newRawMaterials.find(n => n.id === rm.id);
+          if (!updated) return rm;
+          if (orderBranchId === '2') {
+            return { ...rm, stock_sucursal2: updated.stock, stocks: { ...(rm.stocks || {}), '2': updated.stock } };
+          } else {
+            return { ...rm, stock: updated.stock, stocks: { ...(rm.stocks || {}), '1': updated.stock } };
+          }
+        }));
+        setDrinks(prev => prev.map(dr => {
+          const updated = newDrinks.find(n => n.id === dr.id);
+          if (!updated) return dr;
+          if (orderBranchId === '2') {
+            return { ...dr, stock_sucursal2: updated.stock, stocks: { ...(dr.stocks || {}), '2': updated.stock } };
+          } else {
+            return { ...dr, stock: updated.stock, stocks: { ...(dr.stocks || {}), '1': updated.stock } };
+          }
+        }));
+      } else {
+        await deleteDoc(doc(db, 'orders', orderId));
+      }
+
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      if (completedOrder?.id === orderId) {
+        setCompletedOrder(null);
+      }
+    } catch (e: any) {
+      console.error("Error al eliminar orden:", e);
+      Swal.fire({
+        title: 'Error',
+        text: 'Ocurrió un error al eliminar la orden.',
         icon: 'error',
         confirmButtonColor: '#000'
       });
@@ -2093,7 +2175,7 @@ export default function App() {
               currentBranchId={currentBranchId}
               onSwitchBranch={handleSwitchBranch}
               onViewReceipt={(order) => setCompletedOrder(order)}
-              onDeleteOrder={async (id) => await deleteDoc(doc(db, 'orders', id))}
+              onDeleteOrder={handleDeleteOrder}
               onVoidOrder={handleVoidOrder}
               timeRange={timeRange}
               setTimeRange={setTimeRange}
@@ -2971,6 +3053,7 @@ export default function App() {
           order={completedOrder}
           onClose={handleCloseReceipt}
           onConfirmCheckout={completedOrder.id.startsWith('preview') ? handleCheckout : undefined}
+          onVoidOrder={handleVoidOrder}
           onKitchenPrint={async () => {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);

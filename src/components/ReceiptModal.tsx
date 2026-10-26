@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Printer, X, Receipt, ChefHat, CheckSquare, Download } from 'lucide-react';
+import { Printer, X, Receipt, ChefHat, CheckSquare, Download, Ban } from 'lucide-react';
 import { Order } from '../types';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
@@ -13,9 +13,10 @@ interface Props {
   onClose: () => void;
   onKitchenPrint?: () => void;
   onConfirmCheckout?: () => void;
+  onVoidOrder?: (orderId: string) => void | Promise<void>;
 }
 
-export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout }: Props) {
+export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout, onVoidOrder }: Props) {
   // 3. Snapshot Inmutable: Aislar datos del ticket de cualquier mutación o limpieza de estado global
   const ticketSnapshot = React.useMemo(() => {
     return structuredClone(order);
@@ -231,6 +232,12 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {ticketSnapshot.status === 'voided' && (
+          <div className="bg-red-600 text-white p-2.5 text-center font-black uppercase text-xs tracking-wider border-b-2 border-black shrink-0 flex items-center justify-center gap-1.5 print:hidden">
+            <Ban className="w-4 h-4" /> NOTA DE VENTA ANULADA (STOCK DEVUELTO)
+          </div>
+        )}
 
         {ticketSnapshot.id.startsWith('preview-') && (
           <div className="bg-amber-100 border-b-2 border-black p-3 text-center print:hidden shrink-0">
@@ -517,6 +524,35 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
             <Download className="w-4 h-4" />
             Descargar {ticketType === 'customer' ? 'Factura' : 'Comanda'} (PDF)
           </button>
+
+          {onVoidOrder && !ticketSnapshot.id.startsWith('preview-') && ticketSnapshot.status !== 'voided' && (
+            <button
+              className="w-full py-3 bg-red-100 hover:bg-red-200 text-[#B91C1C] border-2 border-[#B91C1C] rounded-xl font-black uppercase text-[11px] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2 cursor-pointer mt-1"
+              onClick={async () => {
+                const res = await Swal.fire({
+                  title: '¿Anular esta Factura?',
+                  text: 'Los productos regresarán automáticamente al stock de la sucursal y la venta quedará anulada.',
+                  icon: 'warning',
+                  showCancelButton: true,
+                  confirmButtonColor: '#B91C1C',
+                  cancelButtonColor: '#1A1A1A',
+                  confirmButtonText: 'Sí, Anular y Devolver Stock',
+                  cancelButtonText: 'Cancelar'
+                });
+                if (res.isConfirmed) {
+                  try {
+                    await onVoidOrder(ticketSnapshot.id);
+                    onClose();
+                  } catch (e) {
+                    console.error("Error al anular orden desde modal:", e);
+                  }
+                }
+              }}
+            >
+              <Ban className="w-4 h-4" />
+              Anular Factura y Devolver Stock
+            </button>
+          )}
 
           <button
             className="w-full mt-2 py-3 bg-white opacity-60 hover:opacity-100! font-black uppercase text-xs transition-all tracking-widest"

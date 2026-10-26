@@ -83,9 +83,13 @@ export function SalesView({
   };
 
   const handleDeleteOrderConfirm = async (orderId: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    const isVoided = targetOrder?.status === 'voided';
     const result = await Swal.fire({
       title: '¿Eliminar nota de venta?',
-      text: 'Esta nota de venta se eliminará permanentemente del sistema.',
+      text: isVoided 
+        ? 'Esta nota de venta anulada se eliminará permanentemente del sistema.'
+        : 'Esta nota de venta se eliminará del registro y su inventario regresará automáticamente al stock.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#B91C1C',
@@ -95,14 +99,18 @@ export function SalesView({
     });
 
     if (result.isConfirmed && onDeleteOrder) {
-      onDeleteOrder(orderId);
-      Swal.fire({
-        title: 'Eliminada',
-        text: 'La nota de venta ha sido eliminada del registro.',
-        icon: 'success',
-        timer: 1500,
-        showConfirmButton: false
-      });
+      try {
+        await onDeleteOrder(orderId);
+        Swal.fire({
+          title: 'Eliminada',
+          text: 'La nota de venta ha sido eliminada y el stock asegurado.',
+          icon: 'success',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } catch (err) {
+        console.error('Error al eliminar orden:', err);
+      }
     }
   };
 
@@ -884,20 +892,21 @@ export function SalesView({
                       {order.status !== 'voided' && onVoidOrder && (
                         <button 
                           onClick={() => handleVoidOrderConfirm(order.id)}
-                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                          title="Anular orden y devolver inventario"
+                          className="bg-red-50 text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black text-[11px] sm:text-xs uppercase flex items-center justify-center gap-1.5 hover:bg-red-100 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] border-2 border-[#B91C1C]"
+                          title="Anular venta y devolver productos al inventario"
                         >
-                          <Ban className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <Ban className="w-4 h-4" />
+                          <span>Anular</span>
                         </button>
                       )}
 
                       {onDeleteOrder && (
                         <button 
                           onClick={() => handleDeleteOrderConfirm(order.id)}
-                          className="bg-white text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black flex items-center justify-center hover:bg-red-50 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] border-2 border-[#B91C1C]"
-                          title="Eliminar orden permanentemente"
+                          className="bg-slate-100 text-slate-500 hover:text-red-700 hover:bg-red-50 px-2.5 sm:px-3 py-3 rounded-xl font-black flex items-center justify-center transition-colors active:translate-y-[2px] border-2 border-slate-300 hover:border-red-400"
+                          title="Eliminar registro"
                         >
-                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
