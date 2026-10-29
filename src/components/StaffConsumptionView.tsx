@@ -541,7 +541,7 @@ export function StaffConsumptionView({
                   >
                     <Plus className="w-3 h-3 stroke-[3]" /> Consumo
                   </button>
-                  {pendingTotal > 0 && (
+                  {currentUser?.role === 'Administrador' && pendingTotal > 0 && (
                     <button
                       type="button"
                       onClick={() => handleSettleWorker(worker, pendingTotal)}
@@ -702,6 +702,7 @@ export function StaffConsumptionView({
                       <span className="font-black text-lg text-[#B91C1C]">${Number(item.total).toFixed(2)}</span>
                     </div>
 
+                    {currentUser?.role === 'Administrador' && (
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -725,6 +726,7 @@ export function StaffConsumptionView({
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
               );

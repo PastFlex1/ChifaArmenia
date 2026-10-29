@@ -14,9 +14,10 @@ interface Props {
   onKitchenPrint?: () => void;
   onConfirmCheckout?: () => void;
   onVoidOrder?: (orderId: string) => void | Promise<void>;
+  isAdmin?: boolean;
 }
 
-export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout, onVoidOrder }: Props) {
+export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout, onVoidOrder, isAdmin = false }: Props) {
   // 3. Snapshot Inmutable: Aislar datos del ticket de cualquier mutación o limpieza de estado global
   const ticketSnapshot = React.useMemo(() => {
     return structuredClone(order);
@@ -525,7 +526,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
             Descargar {ticketType === 'customer' ? 'Factura' : 'Comanda'} (PDF)
           </button>
 
-          {onVoidOrder && !ticketSnapshot.id.startsWith('preview-') && ticketSnapshot.status !== 'voided' && (
+          {isAdmin && onVoidOrder && !ticketSnapshot.id.startsWith('preview-') && ticketSnapshot.status !== 'voided' && (
             <button
               className="w-full py-3 bg-red-100 hover:bg-red-200 text-[#B91C1C] border-2 border-[#B91C1C] rounded-xl font-black uppercase text-[11px] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-y-[1px] transition-all flex justify-center items-center gap-2 cursor-pointer mt-1"
               onClick={async () => {

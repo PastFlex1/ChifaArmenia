@@ -889,7 +889,7 @@ export function SalesView({
                         Ver / Imprimir
                       </button>
                       
-                      {order.status !== 'voided' && onVoidOrder && (
+                      {currentUser?.role === 'Administrador' && order.status !== 'voided' && onVoidOrder && (
                         <button 
                           onClick={() => handleVoidOrderConfirm(order.id)}
                           className="bg-red-50 text-[#B91C1C] px-3 sm:px-4 py-3 rounded-xl font-black text-[11px] sm:text-xs uppercase flex items-center justify-center gap-1.5 hover:bg-red-100 transition-colors active:translate-y-[2px] shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] border-2 border-[#B91C1C]"
@@ -900,7 +900,7 @@ export function SalesView({
                         </button>
                       )}
 
-                      {onDeleteOrder && (
+                      {currentUser?.role === 'Administrador' && onDeleteOrder && (
                         <button 
                           onClick={() => handleDeleteOrderConfirm(order.id)}
                           className="bg-slate-100 text-slate-500 hover:text-red-700 hover:bg-red-50 px-2.5 sm:px-3 py-3 rounded-xl font-black flex items-center justify-center transition-colors active:translate-y-[2px] border-2 border-slate-300 hover:border-red-400"

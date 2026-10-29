@@ -1476,6 +1476,15 @@ export default function App() {
   };
 
   const handleVoidOrder = async (orderId: string) => {
+    if (currentUser?.role !== 'Administrador') {
+      Swal.fire({
+        title: 'Acceso Denegado',
+        text: 'Solo el Administrador puede anular notas de venta.',
+        icon: 'error',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
     let order = orders.find(o => o.id === orderId);
     if (!order) {
       try {
@@ -1573,6 +1582,15 @@ export default function App() {
   };
 
   const handleDeleteOrder = async (orderId: string) => {
+    if (currentUser?.role !== 'Administrador') {
+      Swal.fire({
+        title: 'Acceso Denegado',
+        text: 'Solo el Administrador puede eliminar notas de venta.',
+        icon: 'error',
+        confirmButtonColor: '#B91C1C'
+      });
+      return;
+    }
     try {
       let order = orders.find(o => o.id === orderId);
       if (!order) {
@@ -2175,8 +2193,8 @@ export default function App() {
               currentBranchId={currentBranchId}
               onSwitchBranch={handleSwitchBranch}
               onViewReceipt={(order) => setCompletedOrder(order)}
-              onDeleteOrder={handleDeleteOrder}
-              onVoidOrder={handleVoidOrder}
+              onDeleteOrder={currentUser?.role === 'Administrador' ? handleDeleteOrder : undefined}
+              onVoidOrder={currentUser?.role === 'Administrador' ? handleVoidOrder : undefined}
               timeRange={timeRange}
               setTimeRange={setTimeRange}
               customDateRange={customDateRange}
@@ -3053,7 +3071,8 @@ export default function App() {
           order={completedOrder}
           onClose={handleCloseReceipt}
           onConfirmCheckout={completedOrder.id.startsWith('preview') ? handleCheckout : undefined}
-          onVoidOrder={handleVoidOrder}
+          isAdmin={currentUser?.role === 'Administrador'}
+          onVoidOrder={currentUser?.role === 'Administrador' ? handleVoidOrder : undefined}
           onKitchenPrint={async () => {
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);
