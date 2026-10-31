@@ -8,13 +8,11 @@ import {
   X, 
   Download, 
   CheckCircle2, 
-  Clock, 
   DollarSign, 
   UtensilsCrossed, 
-  AlertCircle,
   FileText,
-  BadgeAlert,
-  ArrowUpDown
+  TrendingUp,
+  ShoppingBag
 } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import Swal from 'sweetalert2';
@@ -42,13 +40,10 @@ export function StaffConsumptionView({
   currentBranchName,
   onSwitchBranch,
   onAddConsumption,
-  onUpdateConsumptionStatus,
   onDeleteConsumption,
-  onSettleWorkerConsumptions
 }: StaffConsumptionViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWorkerFilter, setSelectedWorkerFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'deducted'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State para registrar nuevo consumo
@@ -82,24 +77,22 @@ export function StaffConsumptionView({
 
   // Totales generales
   const stats = useMemo(() => {
-    let pendingTotal = 0;
-    let deductedTotal = 0;
-    const workersWithPending = new Set<string>();
+    let totalPurchased = 0;
+    const activeWorkers = new Set<string>();
 
     branchConsumptions.forEach(c => {
-      if (c.status === 'pending') {
-        pendingTotal += Number(c.total) || 0;
-        workersWithPending.add(c.workerId);
-      } else {
-        deductedTotal += Number(c.total) || 0;
-      }
+      totalPurchased += Number(c.total) || 0;
+      activeWorkers.add(c.workerId);
     });
 
+    const totalCount = branchConsumptions.length;
+    const avgTicket = totalCount > 0 ? totalPurchased / totalCount : 0;
+
     return {
-      pendingTotal,
-      deductedTotal,
-      pendingWorkersCount: workersWithPending.size,
-      totalCount: branchConsumptions.length
+      totalPurchased,
+      totalCount,
+      activeWorkersCount: activeWorkers.size,
+      avgTicket
     };
   }, [branchConsumptions]);
 
@@ -107,29 +100,19 @@ export function StaffConsumptionView({
   const workerBalances = useMemo(() => {
     return branchWorkers.map(w => {
       const workerCons = branchConsumptions.filter(c => c.workerId === w.id);
-      const pendingSum = workerCons
-        .filter(c => c.status === 'pending')
-        .reduce((sum, c) => sum + (Number(c.total) || 0), 0);
-      const deductedSum = workerCons
-        .filter(c => c.status === 'deducted')
-        .reduce((sum, c) => sum + (Number(c.total) || 0), 0);
+      const totalPurchased = workerCons.reduce((sum, c) => sum + (Number(c.total) || 0), 0);
       return {
         worker: w,
-        pendingTotal: pendingSum,
-        deductedTotal: deductedSum,
-        count: workerCons.length,
-        pendingCount: workerCons.filter(c => c.status === 'pending').length
+        totalPurchased,
+        count: workerCons.length
       };
-    });
+    }).sort((a, b) => b.totalPurchased - a.totalPurchased);
   }, [branchWorkers, branchConsumptions]);
 
   // Consumos filtrados para la lista
   const filteredConsumptions = useMemo(() => {
     return branchConsumptions.filter(c => {
       if (selectedWorkerFilter !== 'all' && c.workerId !== selectedWorkerFilter) {
-        return false;
-      }
-      if (statusFilter !== 'all' && c.status !== statusFilter) {
         return false;
       }
       if (searchTerm.trim()) {
@@ -141,7 +124,7 @@ export function StaffConsumptionView({
       }
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [branchConsumptions, selectedWorkerFilter, statusFilter, searchTerm]);
+  }, [branchConsumptions, selectedWorkerFilter, searchTerm]);
 
   // Manejar creación de consumo
   const handleOpenModal = (preselectedWorkerId?: string) => {
@@ -214,7 +197,7 @@ export function StaffConsumptionView({
       items: itemsToSave,
       total: Number(totalToSave.toFixed(2)),
       notes: formNotes.trim() || undefined,
-      status: 'pending',
+      status: 'deducted', // Pagado directamente en el local
       branchId: currentBranchId,
       branchName: branchLabel
     };
@@ -223,8 +206,8 @@ export function StaffConsumptionView({
       await onAddConsumption(newConsumption);
       setIsModalOpen(false);
       Swal.fire({
-        title: '¡Registrado!',
-        text: `Consumo de $${newConsumption.total.toFixed(2)} registrado para ${worker.name}.`,
+        title: '¡Compra Registrada!',
+        text: `Consumo de $${newConsumption.total.toFixed(2)} registrado y pagado por ${worker.name}.`,
         icon: 'success',
         timer: 1800,
         showConfirmButton: false
@@ -235,67 +218,11 @@ export function StaffConsumptionView({
     }
   };
 
-  // Liquidar / Descontar todo de un trabajador
-  const handleSettleWorker = async (worker: UserAccount, pendingAmount: number) => {
-    if (pendingAmount <= 0) {
-      Swal.fire('Sin saldo pendiente', `${worker.name} no tiene consumos pendientes por descontar.`, 'info');
-      return;
-    }
-
-    const result = await Swal.fire({
-      title: '¿Liquidar consumos de trabajador?',
-      html: `<p>Se marcarán como <b>DESCONTADOS</b> todos los consumos pendientes de <b>${worker.name}</b> por un total de <b>$${pendingAmount.toFixed(2)}</b>.</p><p style="font-size: 11px; color: #666; margin-top: 8px;">Usa esta opción cuando descuentes este monto en su rol de pagos o quincena.</p>`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#10B981',
-      cancelButtonColor: '#1A1A1A',
-      confirmButtonText: 'Sí, Marcar Descontado',
-      cancelButtonText: 'Cancelar'
-    });
-
-    if (result.isConfirmed) {
-      try {
-        await onSettleWorkerConsumptions(worker.id);
-        Swal.fire({
-          title: '¡Descuento Liquidado!',
-          text: `Se liquidaron $${pendingAmount.toFixed(2)} de ${worker.name}.`,
-          icon: 'success',
-          timer: 2000,
-          showConfirmButton: false
-        });
-      } catch (err) {
-        console.error(err);
-        Swal.fire('Error', 'No se pudo liquidar los consumos.', 'error');
-      }
-    }
-  };
-
-  // Toggle estado de un consumo
-  const handleToggleStatus = async (item: StaffConsumption) => {
-    const nextStatus = item.status === 'pending' ? 'deducted' : 'pending';
-    const actionLabel = nextStatus === 'deducted' ? 'descontado en el rol de pagos' : 'pendiente de descuento';
-    
-    const result = await Swal.fire({
-      title: `¿Cambiar estado?`,
-      text: `El consumo de $${Number(item.total).toFixed(2)} de ${item.workerName} pasará a estar "${actionLabel}".`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#000',
-      cancelButtonColor: '#777',
-      confirmButtonText: 'Confirmar',
-      cancelButtonText: 'Cancelar'
-    });
-
-    if (result.isConfirmed) {
-      await onUpdateConsumptionStatus(item.id, nextStatus);
-    }
-  };
-
-  // Eliminar consumo
+  // Eliminar consumo (solo Admin)
   const handleDelete = async (id: string, workerName: string, amount: number) => {
     const result = await Swal.fire({
-      title: '¿Eliminar este consumo?',
-      text: `Se eliminará el registro de $${amount.toFixed(2)} de ${workerName}.`,
+      title: '¿Eliminar este registro?',
+      text: `Se eliminará el registro de consumo pagado de $${amount.toFixed(2)} de ${workerName}.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#B91C1C',
@@ -333,14 +260,14 @@ export function StaffConsumptionView({
         c.workerCedula || 'S/N',
         itemsText + (c.notes ? ` (Nota: ${c.notes})` : ''),
         `$${Number(c.total || 0).toFixed(2)}`,
-        c.status === 'pending' ? 'PENDIENTE' : 'DESCONTADO'
+        'PAGADO'
       ];
     });
 
     generateInventoryPDF({
-      title: `Descuentos por Consumo a Trabajadores - ${branchLabel}`,
-      filename: `descuentos_trabajadores_${currentBranchId === '2' ? 'san_rafael' : 'armenia'}`,
-      columns: ['Fecha', 'Trabajador', 'Cédula', 'Detalle Consumo', 'Total', 'Estado'],
+      title: `Consumo de Personal (Pagado en el Local) - ${branchLabel}`,
+      filename: `consumo_personal_${currentBranchId === '2' ? 'san_rafael' : 'armenia'}`,
+      columns: ['Fecha', 'Trabajador', 'Cédula', 'Detalle Consumo', 'Total Pagado', 'Estado'],
       data: rows
     });
   };
@@ -355,10 +282,10 @@ export function StaffConsumptionView({
           </div>
           <div>
             <h2 className="text-lg md:text-xl font-black italic uppercase leading-none">
-              Consumo de Trabajadores
+              Consumo de Personal
             </h2>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-bold uppercase opacity-60">Control y descuento de comida de personal</span>
+              <span className="text-[10px] font-bold uppercase opacity-60">Control y registro de compras pagadas por empleados</span>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
                 📍 {branchLabel}
               </span>
@@ -414,62 +341,62 @@ export function StaffConsumptionView({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Por Descontar</span>
-            <Clock className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl font-black text-[#B91C1C]">
-              ${stats.pendingTotal.toFixed(2)}
-            </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Pendiente en roles</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Ya Descontado</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Total Comprado</span>
+            <DollarSign className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-emerald-600">
-              ${stats.deductedTotal.toFixed(2)}
+              ${stats.totalPurchased.toFixed(2)}
             </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cobrado / Liquidado</span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Pagado en caja</span>
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Con Saldo</span>
-            <Users className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl font-black text-black">
-              {stats.pendingWorkersCount} <span className="text-sm font-bold opacity-50">/ {branchWorkers.length}</span>
-            </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Trabajadores con deuda</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Total Registros</span>
-            <FileText className="w-4 h-4 text-purple-600" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Total Pedidos</span>
+            <ShoppingBag className="w-4 h-4 text-amber-600" />
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-black">
               {stats.totalCount}
             </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Comidas registradas</span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Compras registradas</span>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between opacity-60">
+            <span className="text-[10px] font-black uppercase tracking-wider">Personal Comprador</span>
+            <Users className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl font-black text-black">
+              {stats.activeWorkersCount} <span className="text-sm font-bold opacity-50">/ {branchWorkers.length}</span>
+            </span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Trabajadores activos</span>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between opacity-60">
+            <span className="text-[10px] font-black uppercase tracking-wider">Ticket Promedio</span>
+            <TrendingUp className="w-4 h-4 text-purple-600" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl font-black text-black">
+              ${stats.avgTicket.toFixed(2)}
+            </span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Por compra de personal</span>
           </div>
         </div>
       </div>
 
-      {/* Workers summary cards carousel/grid */}
+      {/* Workers summary cards grid */}
       <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-3 shrink-0">
         <div className="flex justify-between items-center">
           <span className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
-            <Users className="w-4 h-4 text-[#B91C1C]" /> Saldos por Trabajador ({branchWorkers.length})
+            <Users className="w-4 h-4 text-[#B91C1C]" /> Consumos por Trabajador ({branchWorkers.length})
           </span>
           {selectedWorkerFilter !== 'all' && (
             <button
@@ -482,7 +409,7 @@ export function StaffConsumptionView({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
-          {workerBalances.map(({ worker, pendingTotal, deductedTotal, count, pendingCount }) => {
+          {workerBalances.map(({ worker, totalPurchased, count }) => {
             const isSelected = selectedWorkerFilter === worker.id;
             return (
               <div
@@ -503,23 +430,19 @@ export function StaffConsumptionView({
                       </span>
                     </div>
                   </div>
-                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                    pendingTotal > 0
-                      ? 'bg-red-100 text-red-800 border-red-300'
-                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                  }`}>
-                    {pendingTotal > 0 ? 'Con Saldo' : 'Al Día'}
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+                    {count > 0 ? `${count} pedidos` : 'Sin compras'}
                   </span>
                 </div>
 
-                <div className="bg-white p-2 rounded-lg border border-black/20 flex justify-between items-center text-xs">
+                <div className="bg-white p-2.5 rounded-lg border border-black/20 flex justify-between items-center text-xs">
                   <div>
-                    <span className="block text-[9px] font-bold uppercase opacity-50">Por Descontar</span>
-                    <span className="font-black text-base text-[#B91C1C]">${pendingTotal.toFixed(2)}</span>
+                    <span className="block text-[9px] font-bold uppercase opacity-50">Total Comprado</span>
+                    <span className="font-black text-base text-emerald-600">${totalPurchased.toFixed(2)}</span>
                   </div>
                   <div className="text-right">
-                    <span className="block text-[9px] font-bold uppercase opacity-50">Historial Total</span>
-                    <span className="font-bold text-xs opacity-75">${(pendingTotal + deductedTotal).toFixed(2)} ({count})</span>
+                    <span className="block text-[9px] font-bold uppercase opacity-50">Estado</span>
+                    <span className="font-bold text-xs text-slate-700">Pagado al día</span>
                   </div>
                 </div>
 
@@ -531,7 +454,7 @@ export function StaffConsumptionView({
                       isSelected ? 'bg-black text-white' : 'bg-white hover:bg-slate-100 text-black'
                     }`}
                   >
-                    {isSelected ? 'Mostrando Todos' : `Ver ${pendingCount} Pend.`}
+                    {isSelected ? 'Mostrando Todos' : `Ver Historial (${count})`}
                   </button>
                   <button
                     type="button"
@@ -539,18 +462,8 @@ export function StaffConsumptionView({
                     className="py-1 px-2 bg-[#FFD700] hover:bg-yellow-400 text-black rounded-lg font-black text-[10px] uppercase border border-black transition-all flex items-center justify-center gap-0.5"
                     title="Añadir consumo a este trabajador"
                   >
-                    <Plus className="w-3 h-3 stroke-[3]" /> Consumo
+                    <Plus className="w-3 h-3 stroke-[3]" /> Compra
                   </button>
-                  {currentUser?.role === 'Administrador' && pendingTotal > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleSettleWorker(worker, pendingTotal)}
-                      className="py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black text-[10px] uppercase border border-black transition-all"
-                      title="Liquidar todos los consumos pendientes de este trabajador"
-                    >
-                      Liquidar
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -574,37 +487,6 @@ export function StaffConsumptionView({
           </div>
 
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
-            {/* Status Tabs */}
-            <div className="flex bg-[#F7F4F0] p-1 rounded-xl border-2 border-black gap-1">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
-                  statusFilter === 'all' ? 'bg-black text-white' : 'text-slate-600 hover:text-black'
-                }`}
-              >
-                Todos
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('pending')}
-                className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
-                  statusFilter === 'pending' ? 'bg-amber-400 text-black shadow-sm' : 'text-slate-600 hover:text-black'
-                }`}
-              >
-                🟡 Pendientes
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('deducted')}
-                className={`px-3 py-1 rounded-lg text-xs font-black uppercase transition-all ${
-                  statusFilter === 'deducted' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-600 hover:text-black'
-                }`}
-              >
-                🟢 Descontados
-              </button>
-            </div>
-
             {/* Worker select filter */}
             <select
               value={selectedWorkerFilter}
@@ -644,34 +526,23 @@ export function StaffConsumptionView({
                 hour: '2-digit',
                 minute: '2-digit'
               });
-              const isPending = item.status === 'pending';
 
               return (
                 <div
                   key={item.id}
-                  className={`p-3.5 rounded-xl border-2 border-black flex flex-col md:flex-row items-start md:items-center justify-between gap-3 transition-all ${
-                    isPending
-                      ? 'bg-amber-50/60 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
-                      : 'bg-white opacity-85 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.5)]'
-                  }`}
+                  className="p-3.5 rounded-xl border-2 border-black flex flex-col md:flex-row items-start md:items-center justify-between gap-3 transition-all bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,0.8)]"
                 >
                   <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className={`w-9 h-9 rounded-xl border-2 border-black flex items-center justify-center shrink-0 ${
-                      isPending ? 'bg-amber-300 text-black' : 'bg-emerald-200 text-emerald-900'
-                    }`}>
-                      {isPending ? <Clock className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                    <div className="w-9 h-9 rounded-xl border-2 border-black flex items-center justify-center shrink-0 bg-emerald-100 text-emerald-800">
+                      <CheckCircle2 className="w-5 h-5" />
                     </div>
 
                     <div className="flex flex-col min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-black text-sm uppercase text-black">{item.workerName}</span>
                         <span className="text-[10px] font-bold text-slate-500">📅 {formattedDate}</span>
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                          isPending 
-                            ? 'bg-amber-100 text-amber-900 border-amber-300' 
-                            : 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                        }`}>
-                          {isPending ? 'Pendiente por descontar' : 'Ya descontado'}
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-900 border-emerald-300">
+                          ✓ Pagado en el local
                         </span>
                       </div>
 
@@ -679,7 +550,7 @@ export function StaffConsumptionView({
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {item.items && item.items.length > 0 ? (
                           item.items.map((it, idx) => (
-                            <span key={idx} className="inline-flex items-center text-[11px] font-bold bg-white px-2 py-0.5 rounded border border-black/20 text-slate-800">
+                            <span key={idx} className="inline-flex items-center text-[11px] font-bold bg-[#F7F4F0] px-2 py-0.5 rounded border border-black/20 text-slate-800">
                               <strong className="text-[#B91C1C] mr-1">{it.quantity}x</strong> {it.name} (${Number(it.price).toFixed(2)})
                             </span>
                           ))
@@ -698,34 +569,21 @@ export function StaffConsumptionView({
 
                   <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-black/10">
                     <div className="text-left md:text-right">
-                      <span className="block text-[9px] font-bold uppercase opacity-50">Monto</span>
-                      <span className="font-black text-lg text-[#B91C1C]">${Number(item.total).toFixed(2)}</span>
+                      <span className="block text-[9px] font-bold uppercase opacity-50">Monto Pagado</span>
+                      <span className="font-black text-lg text-emerald-700">${Number(item.total).toFixed(2)}</span>
                     </div>
 
                     {currentUser?.role === 'Administrador' && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(item)}
-                        className={`px-3 py-1.5 rounded-lg border-2 border-black font-black uppercase text-[10px] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all ${
-                          isPending
-                            ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                            : 'bg-amber-300 hover:bg-amber-400 text-black'
-                        }`}
-                        title={isPending ? 'Marcar como ya descontado del rol' : 'Revertir a pendiente'}
-                      >
-                        {isPending ? '✓ Descontar' : '↺ Pendiente'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(item.id, item.workerName, item.total)}
-                        className="w-8 h-8 rounded-lg border-2 border-black bg-white hover:bg-red-50 text-[#B91C1C] flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all"
-                        title="Eliminar registro"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id, item.workerName, item.total)}
+                          className="w-8 h-8 rounded-lg border-2 border-black bg-white hover:bg-red-50 text-[#B91C1C] flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all"
+                          title="Eliminar registro"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -747,14 +605,14 @@ export function StaffConsumptionView({
             </button>
 
             <div className="bg-[#1A1A1A] text-[#FFD700] p-5 border-b-4 border-black relative">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-75">Personal • {branchLabel}</span>
-              <h2 className="text-xl font-black italic uppercase leading-none mt-1">Registrar Consumo</h2>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-75">Personal • {branchLabel} (Pagado en Caja)</span>
+              <h2 className="text-xl font-black italic uppercase leading-none mt-1">Registrar Compra de Trabajador</h2>
             </div>
 
             <form onSubmit={handleSaveConsumption} className="p-5 overflow-y-auto flex flex-col gap-4">
               {/* Seleccionar Trabajador */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-black uppercase opacity-75">Trabajador a Descontar</label>
+                <label className="text-xs font-black uppercase opacity-75">Trabajador que Compró</label>
                 <select
                   required
                   value={formWorkerId}
@@ -856,8 +714,8 @@ export function StaffConsumptionView({
                   {/* Total de items */}
                   {formSelectedItems.length > 0 && (
                     <div className="flex justify-between items-center px-1 font-black uppercase text-sm">
-                      <span>Total Consumido:</span>
-                      <span className="text-[#B91C1C] text-base">
+                      <span>Total a Pagar:</span>
+                      <span className="text-emerald-700 text-base">
                         ${formSelectedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toFixed(2)}
                       </span>
                     </div>
@@ -878,7 +736,7 @@ export function StaffConsumptionView({
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-black uppercase opacity-75">Monto a Descontar ($ USD)</label>
+                    <label className="text-xs font-black uppercase opacity-75">Monto Pagado ($ USD)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -898,7 +756,7 @@ export function StaffConsumptionView({
                 <label className="text-xs font-black uppercase opacity-75">Observaciones / Notas (Opcional)</label>
                 <input
                   type="text"
-                  placeholder="Ej. Turno de almuerzo, acordado con administración"
+                  placeholder="Ej. Pagado en efectivo, consumo almuerzo"
                   value={formNotes}
                   onChange={e => setFormNotes(e.target.value)}
                   className="w-full px-3 py-2 bg-white border-2 border-black rounded-xl text-xs font-bold uppercase focus:outline-none"
@@ -910,7 +768,7 @@ export function StaffConsumptionView({
                 type="submit"
                 className="w-full py-3 bg-[#1A1A1A] text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all mt-2"
               >
-                Guardar Consumo para Descuento
+                Guardar Compra de Trabajador
               </button>
             </form>
           </div>

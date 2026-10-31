@@ -1691,15 +1691,15 @@ export default function App() {
     });
 
     const { value: selectedWorkerId } = await Swal.fire({
-      title: 'Descontar a Trabajador',
-      text: `Selecciona el trabajador al que se le cargará este consumo (${cartTotal.toFixed(2)}) para descontar de su sueldo:`,
+      title: 'Consumo de Personal (Pagado)',
+      text: `Selecciona el trabajador que compró este pedido (${cartTotal.toFixed(2)}) pagado en el local:`,
       input: 'select',
       inputOptions,
       inputPlaceholder: 'Selecciona un trabajador...',
       showCancelButton: true,
       confirmButtonColor: '#1A1A1A',
       cancelButtonColor: '#777',
-      confirmButtonText: 'Cargar Consumo',
+      confirmButtonText: 'Registrar Compra',
       cancelButtonText: 'Cancelar',
       inputValidator: (value) => {
         if (!value) return 'Debes seleccionar un trabajador';
@@ -1755,7 +1755,7 @@ export default function App() {
         })),
         total: Number(cartTotal.toFixed(2)),
         notes: (orderNotes || '').trim() || (targetTableId ? `Mesa: ${targetTableId}` : 'POS Directo'),
-        status: 'pending',
+        status: 'deducted', // Pagado / Contabilizado
         branchId: currentBranchId,
         branchName: currentBranchName
       };
@@ -1771,8 +1771,8 @@ export default function App() {
       setActiveTableId(null);
 
       Swal.fire({
-        title: '¡Consumo Registrado!',
-        text: `Se cargaron ${newStaffConsumption.total.toFixed(2)} a ${worker.name} para descontar de su sueldo. El inventario ha sido actualizado.`,
+        title: '¡Compra Registrada!',
+        text: `Se registró la compra de ${newStaffConsumption.total.toFixed(2)} pagada por ${worker.name}. El inventario ha sido actualizado.`,
         icon: 'success',
         confirmButtonColor: '#1A1A1A'
       });
@@ -2650,9 +2650,9 @@ export default function App() {
                     onClick={handleChargeToStaff}
                     disabled={cart.length === 0 || isCheckingOut}
                     className="pos-cart-action-btn w-full py-2 px-2 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black rounded-xl font-black uppercase text-[11px] tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    title="Cargar comanda al consumo de un trabajador para descontar de su sueldo"
+                    title="Registrar consumo comprado y pagado por un trabajador"
                   >
-                    <UtensilsCrossed className="w-3.5 h-3.5" /> Descontar a Trabajador
+                    <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (Pagado)
                   </button>
                 </div>
               )}
@@ -2961,7 +2961,7 @@ export default function App() {
                   disabled={cart.length === 0 || isCheckingOut}
                   className="w-full mt-2 py-2.5 px-2 bg-amber-400 text-black border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  <UtensilsCrossed className="w-3.5 h-3.5" /> Descontar a Trabajador
+                  <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (Pagado)
                 </button>
               </>
             )}
