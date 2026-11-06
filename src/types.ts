@@ -79,6 +79,9 @@ export interface StaffConsumption {
   workerCedula?: string;
   date: string;
   items: StaffConsumptionItem[];
+  subtotal?: number;
+  discountAmount?: number;
+  discountApplied?: boolean;
   total: number;
   notes?: string;
   status: 'pending' | 'deducted';

@@ -1720,16 +1720,36 @@ export default function App() {
       inputOptions[w.id] = `${w.name} (${w.role})`;
     });
 
+    const rawSubtotal = Number(cartTotal.toFixed(2));
+    const discountAmount = Number((rawSubtotal * 0.20).toFixed(2));
+    const discountedTotal = Number((rawSubtotal - discountAmount).toFixed(2));
+
     const { value: selectedWorkerId } = await Swal.fire({
-      title: 'Consumo de Personal (Pagado)',
-      text: `Selecciona el trabajador que compró este pedido (${cartTotal.toFixed(2)}) pagado en el local:`,
+      title: 'Consumo de Personal (-20% Desc.)',
+      html: `
+        <div style="text-align:left; font-size:13px; background:#fefce8; border:2px solid #000; border-radius:12px; padding:12px; margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+            <span style="font-weight:700; color:#555;">Subtotal Normal:</span>
+            <span style="font-weight:800; text-decoration:line-through; color:#777;">${rawSubtotal.toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px; color:#b45309;">
+            <span style="font-weight:800;">Descuento Empleado (20%):</span>
+            <span style="font-weight:900;">-${discountAmount.toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; border-top:1px dashed #000; padding-top:6px; font-size:16px; color:#047857;">
+            <span style="font-weight:900;">TOTAL A PAGAR (-20%):</span>
+            <span style="font-weight:900;">${discountedTotal.toFixed(2)}</span>
+          </div>
+        </div>
+        <div style="font-size:12px; font-weight:700; color:#333;">Selecciona el trabajador que compró este pedido:</div>
+      `,
       input: 'select',
       inputOptions,
       inputPlaceholder: 'Selecciona un trabajador...',
       showCancelButton: true,
       confirmButtonColor: '#1A1A1A',
       cancelButtonColor: '#777',
-      confirmButtonText: 'Registrar Compra',
+      confirmButtonText: `Cobrar ${discountedTotal.toFixed(2)} (-20%)`,
       cancelButtonText: 'Cancelar',
       inputValidator: (value) => {
         if (!value) return 'Debes seleccionar un trabajador';
@@ -1783,9 +1803,12 @@ export default function App() {
           quantity: i.quantity,
           price: i.menuItem.price
         })),
-        total: Number(cartTotal.toFixed(2)),
+        subtotal: rawSubtotal,
+        discountAmount,
+        discountApplied: true,
+        total: discountedTotal,
         notes: (orderNotes || '').trim() || (targetTableId ? `Mesa: ${targetTableId}` : 'POS Directo'),
-        status: 'deducted', // Pagado / Contabilizado
+        status: 'deducted', // Pagado / Contabilizado con 20% de descuento
         branchId: currentBranchId,
         branchName: currentBranchName
       };
@@ -1801,8 +1824,8 @@ export default function App() {
       setActiveTableId(null);
 
       Swal.fire({
-        title: '¡Compra Registrada!',
-        text: `Se registró la compra de ${newStaffConsumption.total.toFixed(2)} pagada por ${worker.name}. El inventario ha sido actualizado.`,
+        title: '¡Compra de Personal Registrada (-20%)!',
+        text: `Subtotal: ${rawSubtotal.toFixed(2)} | Desc. 20%: -${discountAmount.toFixed(2)} | Total Pagado por ${worker.name}: ${discountedTotal.toFixed(2)}.`,
         icon: 'success',
         confirmButtonColor: '#1A1A1A'
       });
@@ -2684,7 +2707,7 @@ export default function App() {
                     className="pos-cart-action-btn w-full py-2 px-2 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black rounded-xl font-black uppercase text-[11px] tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                     title="Registrar consumo comprado y pagado por un trabajador"
                   >
-                    <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (Pagado)
+                    <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (-20% Desc.)
                   </button>
                 </div>
               )}
@@ -2993,7 +3016,7 @@ export default function App() {
                   disabled={cart.length === 0 || isCheckingOut}
                   className="w-full mt-2 py-2.5 px-2 bg-amber-400 text-black border-2 border-black rounded-xl font-black uppercase text-xs tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (Pagado)
+                  <UtensilsCrossed className="w-3.5 h-3.5" /> Consumo Trabajador (-20% Desc.)
                 </button>
               </>
             )}

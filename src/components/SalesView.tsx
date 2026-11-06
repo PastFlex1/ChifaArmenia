@@ -3,6 +3,7 @@ import { Order, UserAccount, StaffConsumption, MenuItem } from '../types';
 import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download, Bike, ShoppingBag, UtensilsCrossed } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
+import { getStaffConsumptionTotals } from './StaffConsumptionView';
 import Swal from 'sweetalert2';
 
 interface SalesViewProps {
@@ -46,6 +47,7 @@ export function SalesView({
     const convertedStaff: Order[] = (staffConsumptions || [])
       .filter(c => !existingIds.has(c.id))
       .map((c, idx) => {
+        const { subtotal, discountAmount, total } = getStaffConsumptionTotals(c);
         let calculatedCost = 0;
         const mappedItems = (c.items || []).map((it, i) => {
           const matchedMenu = (posItems || []).find(
@@ -54,6 +56,7 @@ export function SalesView({
           const unitCost = matchedMenu ? matchedMenu.cost : 0;
           const qty = Number(it.quantity) || 1;
           calculatedCost += unitCost * qty;
+          const discountedUnitPrice = Number(((Number(it.price) || 0) * 0.80).toFixed(2));
           return {
             id: `${c.id}_item_${i}`,
             quantity: qty,
@@ -61,19 +64,19 @@ export function SalesView({
               id: matchedMenu?.id || `staff_${it.name}`,
               name: it.name,
               category: matchedMenu?.category || ('Especial' as any),
-              price: Number(it.price) || 0,
+              price: discountedUnitPrice,
               cost: unitCost
             }
           };
         });
-        const total = Number(c.total) || 0;
+        const discountNote = `Desc. 20% Empleado (Normal: ${subtotal.toFixed(2)} | -${discountAmount.toFixed(2)})`;
         return {
           id: c.id,
           orderNumber: idx + 1,
           date: c.date,
-          customerName: `Personal: ${c.workerName}`,
+          customerName: `Personal (-20%): ${c.workerName}`,
           tableNumber: 'Personal',
-          notes: c.notes,
+          notes: c.notes ? `${c.notes} • ${discountNote}` : discountNote,
           branchId: c.branchId || '1',
           branchName: c.branchName || (c.branchId === '2' ? 'San Rafael' : 'Armenia'),
           items: mappedItems,

@@ -10,9 +10,9 @@ import {
   CheckCircle2, 
   DollarSign, 
   UtensilsCrossed, 
-  FileText,
   TrendingUp,
-  ShoppingBag
+  ShoppingBag,
+  Percent
 } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import Swal from 'sweetalert2';
@@ -29,6 +29,25 @@ interface StaffConsumptionViewProps {
   onUpdateConsumptionStatus: (id: string, status: 'pending' | 'deducted') => Promise<void>;
   onDeleteConsumption: (id: string) => Promise<void>;
   onSettleWorkerConsumptions: (workerId: string) => Promise<void>;
+}
+
+const STAFF_DISCOUNT_RATE = 0.20; // 20% de descuento para todo consumo de personal
+
+export function getStaffConsumptionTotals(c: StaffConsumption) {
+  const rawSubtotal = c.subtotal
+    ? Number(c.subtotal)
+    : (c.items && c.items.length > 0
+        ? c.items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0)
+        : Number(c.total) || 0);
+  const finalTotal = c.discountApplied
+    ? Number(c.total)
+    : Number((rawSubtotal * (1 - STAFF_DISCOUNT_RATE)).toFixed(2));
+  const discountAmount = Number((rawSubtotal - finalTotal).toFixed(2));
+  return {
+    subtotal: Number(rawSubtotal.toFixed(2)),
+    discountAmount,
+    total: finalTotal
+  };
 }
 
 export function StaffConsumptionView({
@@ -67,7 +86,7 @@ export function StaffConsumptionView({
     });
   }, [users, currentBranchId]);
 
-  // Filtrar consumos de la sucursal actual
+  // Filtrar consumos de la sucursal actual (excluyendo anulados)
   const branchConsumptions = useMemo(() => {
     return consumptions.filter(c => {
       if ((c as any).status === 'voided') return false;
@@ -76,13 +95,18 @@ export function StaffConsumptionView({
     });
   }, [consumptions, currentBranchId]);
 
-  // Totales generales
+  // Totales generales con el 20% de descuento
   const stats = useMemo(() => {
+    let totalSubtotal = 0;
+    let totalDiscounted = 0;
     let totalPurchased = 0;
     const activeWorkers = new Set<string>();
 
     branchConsumptions.forEach(c => {
-      totalPurchased += Number(c.total) || 0;
+      const { subtotal, discountAmount, total } = getStaffConsumptionTotals(c);
+      totalSubtotal += subtotal;
+      totalDiscounted += discountAmount;
+      totalPurchased += total;
       activeWorkers.add(c.workerId);
     });
 
@@ -90,6 +114,8 @@ export function StaffConsumptionView({
     const avgTicket = totalCount > 0 ? totalPurchased / totalCount : 0;
 
     return {
+      totalSubtotal,
+      totalDiscounted,
       totalPurchased,
       totalCount,
       activeWorkersCount: activeWorkers.size,
@@ -101,9 +127,19 @@ export function StaffConsumptionView({
   const workerBalances = useMemo(() => {
     return branchWorkers.map(w => {
       const workerCons = branchConsumptions.filter(c => c.workerId === w.id);
-      const totalPurchased = workerCons.reduce((sum, c) => sum + (Number(c.total) || 0), 0);
+      let totalSubtotal = 0;
+      let totalDiscounted = 0;
+      let totalPurchased = 0;
+      workerCons.forEach(c => {
+        const { subtotal, discountAmount, total } = getStaffConsumptionTotals(c);
+        totalSubtotal += subtotal;
+        totalDiscounted += discountAmount;
+        totalPurchased += total;
+      });
       return {
         worker: w,
+        totalSubtotal,
+        totalDiscounted,
         totalPurchased,
         count: workerCons.length
       };
@@ -153,6 +189,17 @@ export function StaffConsumptionView({
     setFormSelectedItems(prev => prev.filter(i => i.id !== id));
   };
 
+  // Cálculo en tiempo real dentro del modal (con 20% de descuento)
+  const modalTotals = useMemo(() => {
+    const rawSubtotal = formConceptType === 'menu'
+      ? formSelectedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0)
+      : (parseFloat(formManualAmount) || 0);
+    const subtotal = Number(rawSubtotal.toFixed(2));
+    const discountAmount = Number((subtotal * STAFF_DISCOUNT_RATE).toFixed(2));
+    const finalTotal = Number((subtotal - discountAmount).toFixed(2));
+    return { subtotal, discountAmount, finalTotal };
+  }, [formConceptType, formSelectedItems, formManualAmount]);
+
   const handleSaveConsumption = async (e: React.FormEvent) => {
     e.preventDefault();
     const worker = branchWorkers.find(w => w.id === formWorkerId);
@@ -162,7 +209,6 @@ export function StaffConsumptionView({
     }
 
     let itemsToSave: { name: string; quantity: number; price: number }[] = [];
-    let totalToSave = 0;
 
     if (formConceptType === 'menu') {
       if (formSelectedItems.length === 0) {
@@ -174,7 +220,6 @@ export function StaffConsumptionView({
         quantity: i.quantity,
         price: i.price
       }));
-      totalToSave = formSelectedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
     } else {
       const amount = parseFloat(formManualAmount);
       if (!amount || amount <= 0 || !formManualDesc.trim()) {
@@ -186,8 +231,9 @@ export function StaffConsumptionView({
         quantity: 1,
         price: Number(amount.toFixed(2))
       }];
-      totalToSave = Number(amount.toFixed(2));
     }
+
+    const { subtotal, discountAmount, finalTotal } = modalTotals;
 
     const newConsumption: StaffConsumption = {
       id: `staff_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -196,9 +242,12 @@ export function StaffConsumptionView({
       workerCedula: worker.cedula,
       date: new Date().toISOString(),
       items: itemsToSave,
-      total: Number(totalToSave.toFixed(2)),
+      subtotal,
+      discountAmount,
+      discountApplied: true,
+      total: finalTotal,
       notes: formNotes.trim() || undefined,
-      status: 'deducted', // Pagado directamente en el local
+      status: 'deducted', // Pagado directamente en el local con 20% desc
       branchId: currentBranchId,
       branchName: branchLabel
     };
@@ -207,10 +256,10 @@ export function StaffConsumptionView({
       await onAddConsumption(newConsumption);
       setIsModalOpen(false);
       Swal.fire({
-        title: '¡Compra Registrada!',
-        text: `Consumo de $${newConsumption.total.toFixed(2)} registrado y pagado por ${worker.name}.`,
+        title: '¡Compra con 20% Desc. Registrada!',
+        html: `<p>Trabajador: <b>${worker.name}</b></p><p>Subtotal: $${subtotal.toFixed(2)} | Desc. 20%: <b>-$${discountAmount.toFixed(2)}</b></p><p style="font-size: 16px; margin-top: 6px;">Total Cobrado: <b style="color: #059669;">$${finalTotal.toFixed(2)}</b></p>`,
         icon: 'success',
-        timer: 1800,
+        timer: 2400,
         showConfirmButton: false
       });
     } catch (err: any) {
@@ -223,7 +272,7 @@ export function StaffConsumptionView({
   const handleDelete = async (id: string, workerName: string, amount: number) => {
     const result = await Swal.fire({
       title: '¿Eliminar este registro?',
-      text: `Se eliminará el registro de consumo pagado de $${amount.toFixed(2)} de ${workerName}.`,
+      text: `Se eliminará el registro de consumo pagado de $${amount.toFixed(2)} de ${workerName} y se devolverá el stock.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#B91C1C',
@@ -255,20 +304,21 @@ export function StaffConsumptionView({
         hour: '2-digit',
         minute: '2-digit'
       });
+      const { subtotal, discountAmount, total } = getStaffConsumptionTotals(c);
       return [
         formattedDate,
         c.workerName,
-        c.workerCedula || 'S/N',
         itemsText + (c.notes ? ` (Nota: ${c.notes})` : ''),
-        `$${Number(c.total || 0).toFixed(2)}`,
-        'PAGADO'
+        `$${subtotal.toFixed(2)}`,
+        `-$${discountAmount.toFixed(2)}`,
+        `$${total.toFixed(2)}`
       ];
     });
 
     generateInventoryPDF({
-      title: `Consumo de Personal (Pagado en el Local) - ${branchLabel}`,
+      title: `Consumo de Personal (20% Descuento Aplicado) - ${branchLabel}`,
       filename: `consumo_personal_${currentBranchId === '2' ? 'san_rafael' : 'armenia'}`,
-      columns: ['Fecha', 'Trabajador', 'Cédula', 'Detalle Consumo', 'Total Pagado', 'Estado'],
+      columns: ['Fecha', 'Trabajador', 'Detalle Consumo', 'Subtotal', 'Desc. 20%', 'Total Pagado'],
       data: rows
     });
   };
@@ -283,10 +333,10 @@ export function StaffConsumptionView({
           </div>
           <div>
             <h2 className="text-lg md:text-xl font-black italic uppercase leading-none">
-              Consumo de Personal
+              Consumo de Personal (-20% Desc.)
             </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-bold uppercase opacity-60">Control y registro de compras pagadas por empleados</span>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <span className="text-[10px] font-bold uppercase opacity-75">Todos los consumos aplican 20% de descuento sobre el total</span>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
                 📍 {branchLabel}
               </span>
@@ -325,7 +375,7 @@ export function StaffConsumptionView({
             onClick={() => handleOpenModal()}
             className="flex-1 md:flex-none px-4 py-2.5 bg-[#FFD700] text-black border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all flex items-center justify-center gap-2"
           >
-            <Plus className="w-4 h-4 stroke-[3]" /> Registrar Consumo
+            <Plus className="w-4 h-4 stroke-[3]" /> Registrar Consumo (-20%)
           </button>
           <button
             onClick={handleDownloadPDF}
@@ -342,14 +392,29 @@ export function StaffConsumptionView({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Total Comprado</span>
+            <span className="text-[10px] font-black uppercase tracking-wider">Total Cobrado (-20%)</span>
             <DollarSign className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="mt-2">
             <span className="text-2xl font-black text-emerald-600">
               ${stats.totalPurchased.toFixed(2)}
             </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Pagado en caja</span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">
+              De ${stats.totalSubtotal.toFixed(2)} sin desc.
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between opacity-60">
+            <span className="text-[10px] font-black uppercase tracking-wider">Descuento 20% Total</span>
+            <Percent className="w-4 h-4 text-[#B91C1C]" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl font-black text-[#B91C1C]">
+              -${stats.totalDiscounted.toFixed(2)}
+            </span>
+            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Ahorro a trabajadores</span>
           </div>
         </div>
 
@@ -378,19 +443,6 @@ export function StaffConsumptionView({
             <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Trabajadores activos</span>
           </div>
         </div>
-
-        <div className="bg-white p-4 rounded-2xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between opacity-60">
-            <span className="text-[10px] font-black uppercase tracking-wider">Ticket Promedio</span>
-            <TrendingUp className="w-4 h-4 text-purple-600" />
-          </div>
-          <div className="mt-2">
-            <span className="text-2xl font-black text-black">
-              ${stats.avgTicket.toFixed(2)}
-            </span>
-            <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Por compra de personal</span>
-          </div>
-        </div>
       </div>
 
       {/* Workers summary cards grid */}
@@ -410,7 +462,7 @@ export function StaffConsumptionView({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
-          {workerBalances.map(({ worker, totalPurchased, count }) => {
+          {workerBalances.map(({ worker, totalSubtotal, totalDiscounted, totalPurchased, count }) => {
             const isSelected = selectedWorkerFilter === worker.id;
             return (
               <div
@@ -438,12 +490,14 @@ export function StaffConsumptionView({
 
                 <div className="bg-white p-2.5 rounded-lg border border-black/20 flex justify-between items-center text-xs">
                   <div>
-                    <span className="block text-[9px] font-bold uppercase opacity-50">Total Comprado</span>
+                    <span className="block text-[9px] font-bold uppercase opacity-50">Total Pagado (-20%)</span>
                     <span className="font-black text-base text-emerald-600">${totalPurchased.toFixed(2)}</span>
                   </div>
                   <div className="text-right">
-                    <span className="block text-[9px] font-bold uppercase opacity-50">Estado</span>
-                    <span className="font-bold text-xs text-slate-700">Pagado al día</span>
+                    <span className="block text-[9px] font-bold uppercase opacity-50">Desc. 20% Ahorrado</span>
+                    <span className="font-black text-xs text-[#B91C1C]">
+                      -${totalDiscounted.toFixed(2)} <span className="opacity-60 font-bold text-[10px]">(de ${totalSubtotal.toFixed(2)})</span>
+                    </span>
                   </div>
                 </div>
 
@@ -461,9 +515,9 @@ export function StaffConsumptionView({
                     type="button"
                     onClick={() => handleOpenModal(worker.id)}
                     className="py-1 px-2 bg-[#FFD700] hover:bg-yellow-400 text-black rounded-lg font-black text-[10px] uppercase border border-black transition-all flex items-center justify-center gap-0.5"
-                    title="Añadir consumo a este trabajador"
+                    title="Añadir consumo con 20% de descuento a este trabajador"
                   >
-                    <Plus className="w-3 h-3 stroke-[3]" /> Compra
+                    <Plus className="w-3 h-3 stroke-[3]" /> Compra (-20%)
                   </button>
                 </div>
               </div>
@@ -527,6 +581,7 @@ export function StaffConsumptionView({
                 hour: '2-digit',
                 minute: '2-digit'
               });
+              const { subtotal, discountAmount, total } = getStaffConsumptionTotals(item);
 
               return (
                 <div
@@ -542,6 +597,9 @@ export function StaffConsumptionView({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-black text-sm uppercase text-black">{item.workerName}</span>
                         <span className="text-[10px] font-bold text-slate-500">📅 {formattedDate}</span>
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-amber-100 text-amber-900 border-amber-400">
+                          🏷️ 20% Desc. Empleado
+                        </span>
                         <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-900 border-emerald-300">
                           ✓ Pagado en el local
                         </span>
@@ -570,15 +628,19 @@ export function StaffConsumptionView({
 
                   <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-black/10">
                     <div className="text-left md:text-right">
-                      <span className="block text-[9px] font-bold uppercase opacity-50">Monto Pagado</span>
-                      <span className="font-black text-lg text-emerald-700">${Number(item.total).toFixed(2)}</span>
+                      <div className="flex items-center md:justify-end gap-1.5 text-[10px] font-bold">
+                        <span className="line-through text-slate-400">${subtotal.toFixed(2)}</span>
+                        <span className="text-[#B91C1C] font-black">(-20%: -${discountAmount.toFixed(2)})</span>
+                      </div>
+                      <span className="block text-[9px] font-bold uppercase opacity-50">Total Pagado</span>
+                      <span className="font-black text-lg text-emerald-700">${total.toFixed(2)}</span>
                     </div>
 
                     {currentUser?.role === 'Administrador' && (
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => handleDelete(item.id, item.workerName, item.total)}
+                          onClick={() => handleDelete(item.id, item.workerName, total)}
                           className="w-8 h-8 rounded-lg border-2 border-black bg-white hover:bg-red-50 text-[#B91C1C] flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-none transition-all"
                           title="Eliminar registro"
                         >
@@ -606,7 +668,7 @@ export function StaffConsumptionView({
             </button>
 
             <div className="bg-[#1A1A1A] text-[#FFD700] p-5 border-b-4 border-black relative">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-75">Personal • {branchLabel} (Pagado en Caja)</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-75">Personal • {branchLabel} (20% Descuento Automático)</span>
               <h2 className="text-xl font-black italic uppercase leading-none mt-1">Registrar Compra de Trabajador</h2>
             </div>
 
@@ -711,16 +773,6 @@ export function StaffConsumptionView({
                       ))
                     )}
                   </div>
-
-                  {/* Total de items */}
-                  {formSelectedItems.length > 0 && (
-                    <div className="flex justify-between items-center px-1 font-black uppercase text-sm">
-                      <span>Total a Pagar:</span>
-                      <span className="text-emerald-700 text-base">
-                        ${formSelectedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
                 </div>
               ) : (
                 /* Monto libre manual */
@@ -737,7 +789,7 @@ export function StaffConsumptionView({
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-black uppercase opacity-75">Monto Pagado ($ USD)</label>
+                    <label className="text-xs font-black uppercase opacity-75">Suma / Valor Normal ($ USD)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -748,6 +800,26 @@ export function StaffConsumptionView({
                       onChange={e => setFormManualAmount(e.target.value)}
                       className="w-full px-3 py-2.5 bg-white border-2 border-black rounded-xl text-sm font-bold focus:outline-none"
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* Desglose del 20% de Descuento */}
+              {modalTotals.subtotal > 0 && (
+                <div className="bg-white p-3 rounded-xl border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-600 uppercase">
+                    <span>Subtotal Normal:</span>
+                    <span>${modalTotals.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs font-black text-[#B91C1C] uppercase">
+                    <span>Descuento Empleado (20%):</span>
+                    <span>-${modalTotals.discountAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 mt-1 border-t-2 border-dashed border-black/20 font-black uppercase text-sm">
+                    <span>Total a Pagar (-20%):</span>
+                    <span className="text-emerald-700 text-lg">
+                      ${modalTotals.finalTotal.toFixed(2)}
+                    </span>
                   </div>
                 </div>
               )}
@@ -769,7 +841,7 @@ export function StaffConsumptionView({
                 type="submit"
                 className="w-full py-3 bg-[#1A1A1A] text-[#FFD700] border-2 border-black rounded-xl font-black uppercase text-sm shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none transition-all mt-2"
               >
-                Guardar Compra de Trabajador
+                Guardar Compra con 20% Desc. {modalTotals.finalTotal > 0 ? `($${modalTotals.finalTotal.toFixed(2)})` : ''}
               </button>
             </form>
           </div>
