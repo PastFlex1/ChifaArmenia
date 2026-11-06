@@ -309,6 +309,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                           if (norm === 'rappi') return '🧡 TIPO: RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 TIPO: UBER EATS';
                           if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 TIPO: LLEVAR';
+                          if (norm === 'personal') return '👤 TIPO: CONSUMO PERSONAL';
                           return `MESA: ${ticketSnapshot.tableNumber}`;
                         })()}
                       </p>
@@ -420,6 +421,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
                           if (norm === 'rappi') return '🧡 RAPPI';
                           if (norm === 'uber' || norm === 'uber eats' || norm.startsWith('uber')) return '🟢 UBER EATS';
                           if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') return '🏠 LLEVAR';
+                          if (norm === 'personal') return '👤 CONSUMO PERSONAL';
                           return `MESA: ${ticketSnapshot.tableNumber}`;
                         })()}
                       </h2>

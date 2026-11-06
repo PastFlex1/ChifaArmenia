@@ -70,6 +70,7 @@ export function StaffConsumptionView({
   // Filtrar consumos de la sucursal actual
   const branchConsumptions = useMemo(() => {
     return consumptions.filter(c => {
+      if ((c as any).status === 'voided') return false;
       const cBranch = c.branchId || '1';
       return cBranch === currentBranchId;
     });

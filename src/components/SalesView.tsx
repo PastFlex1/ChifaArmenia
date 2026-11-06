@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Order, UserAccount } from '../types';
+import { Order, UserAccount, StaffConsumption, MenuItem } from '../types';
 import { FileText, Printer, ChevronRight, TrendingUp, DollarSign, Activity, Users, BarChart as BarChartIcon, List, Trash2, Ban, Package, Download, Bike, ShoppingBag, UtensilsCrossed } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
@@ -7,6 +7,8 @@ import Swal from 'sweetalert2';
 
 interface SalesViewProps {
   orders: Order[];
+  staffConsumptions?: StaffConsumption[];
+  posItems?: MenuItem[];
   users?: UserAccount[];
   currentUser: UserAccount | null;
   currentBranchId?: '1' | '2';
@@ -22,6 +24,8 @@ interface SalesViewProps {
 
 export function SalesView({ 
   orders, 
+  staffConsumptions = [],
+  posItems = [],
   users = [], 
   currentUser, 
   currentBranchId: propBranchId,
@@ -36,16 +40,67 @@ export function SalesView({
 }: SalesViewProps) {
   const activeBranch: '1' | '2' = propBranchId || (currentUser?.branchId as '1' | '2') || (currentUser?.cedula === '1714851332001' ? '2' : '1');
 
+  // Combinar ventas normales y consumos pagados de personal
+  const combinedOrders = useMemo(() => {
+    const existingIds = new Set(orders.map(o => o.id));
+    const convertedStaff: Order[] = (staffConsumptions || [])
+      .filter(c => !existingIds.has(c.id))
+      .map((c, idx) => {
+        let calculatedCost = 0;
+        const mappedItems = (c.items || []).map((it, i) => {
+          const matchedMenu = (posItems || []).find(
+            p => p.name.trim().toLowerCase() === (it.name || '').trim().toLowerCase()
+          );
+          const unitCost = matchedMenu ? matchedMenu.cost : 0;
+          const qty = Number(it.quantity) || 1;
+          calculatedCost += unitCost * qty;
+          return {
+            id: `${c.id}_item_${i}`,
+            quantity: qty,
+            menuItem: {
+              id: matchedMenu?.id || `staff_${it.name}`,
+              name: it.name,
+              category: matchedMenu?.category || ('Especial' as any),
+              price: Number(it.price) || 0,
+              cost: unitCost
+            }
+          };
+        });
+        const total = Number(c.total) || 0;
+        return {
+          id: c.id,
+          orderNumber: idx + 1,
+          date: c.date,
+          customerName: `Personal: ${c.workerName}`,
+          tableNumber: 'Personal',
+          notes: c.notes,
+          branchId: c.branchId || '1',
+          branchName: c.branchName || (c.branchId === '2' ? 'San Rafael' : 'Armenia'),
+          items: mappedItems,
+          total,
+          totalCost: calculatedCost,
+          profit: total - calculatedCost,
+          sellerId: c.workerId,
+          sellerName: c.workerName,
+          status: (c as any).status === 'voided' ? 'voided' : 'active'
+        } as Order;
+      });
+
+    return [...orders, ...convertedStaff].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+  }, [orders, staffConsumptions, posItems]);
+
   // Cada perfil muestra estrictamente las ventas de su propia sucursal
   const branchOrders = useMemo(() => {
-    return orders.filter(o => {
+    return combinedOrders.filter(o => {
       const isSanRafael = (o.branchId === '2' || o.branchName === 'Sucursal 2' || o.branchName === 'San Rafael');
       return activeBranch === '2' ? isSanRafael : !isSanRafael;
     });
-  }, [orders, activeBranch]);
+  }, [combinedOrders, activeBranch]);
 
   const [selectedSeller, setSelectedSeller] = useState<string>('all');
-  const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber'>('all');
+  const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber' | 'personal'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
   const [visibleCount, setVisibleCount] = useState<number>(40);
 
@@ -83,7 +138,7 @@ export function SalesView({
   };
 
   const handleDeleteOrderConfirm = async (orderId: string) => {
-    const targetOrder = orders.find(o => o.id === orderId);
+    const targetOrder = combinedOrders.find(o => o.id === orderId);
     const isVoided = targetOrder?.status === 'voided';
     const result = await Swal.fire({
       title: '¿Eliminar nota de venta?',
@@ -225,12 +280,18 @@ export function SalesView({
         const norm = (o.tableNumber || '').trim().toLowerCase();
         return norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar';
       });
+    } else if (selectedOrderType === 'personal') {
+      filtered = filtered.filter(o => {
+        const norm = (o.tableNumber || '').trim().toLowerCase();
+        return norm === 'personal' || o.id.startsWith('staff_');
+      });
     } else if (selectedOrderType === 'mesas') {
       filtered = filtered.filter(o => {
         const norm = (o.tableNumber || '').trim().toLowerCase();
         return norm !== 'pedidosya' && norm !== 'pedidos ya' && !norm.startsWith('pedidos') &&
                norm !== 'rappi' && norm !== 'uber' && norm !== 'uber eats' && !norm.startsWith('uber') &&
-               norm !== 'domicilio' && norm !== 'para llevar' && norm !== 'llevar';
+               norm !== 'domicilio' && norm !== 'para llevar' && norm !== 'llevar' &&
+               norm !== 'personal' && !o.id.startsWith('staff_');
       });
     }
 
@@ -255,6 +316,7 @@ export function SalesView({
     let pyCount = 0, pyTotal = 0;
     let rappiCount = 0, rappiTotal = 0;
     let uberCount = 0, uberTotal = 0;
+    let personalCount = 0, personalTotal = 0;
 
     // Calcular estadísticas globales con base en la lista de esta sucursal
     const activeNonVoided = branchOrders.filter(o => {
@@ -282,13 +344,16 @@ export function SalesView({
       } else if (norm === 'domicilio' || norm === 'para llevar' || norm === 'llevar') {
         domicilioCount++;
         domicilioTotal += o.total;
+      } else if (norm === 'personal' || o.id.startsWith('staff_')) {
+        personalCount++;
+        personalTotal += o.total;
       } else {
         mesasCount++;
         mesasTotal += o.total;
       }
     });
 
-    return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal };
+    return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal, personalCount, personalTotal };
   }, [branchOrders, selectedSeller, sellers]);
 
   const totalRevenue = validOrders.reduce((sum, order) => sum + order.total, 0);
@@ -566,6 +631,16 @@ export function SalesView({
             >
               <UtensilsCrossed className="w-3.5 h-3.5" /> Mesas ({orderTypeStats.mesasCount})
             </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedOrderType('personal')}
+              className={`px-3 py-1.5 rounded-xl border-2 border-black font-black uppercase text-[11px] transition-all whitespace-nowrap flex items-center gap-1 ${
+                 selectedOrderType === 'personal' ? 'bg-amber-400 text-black shadow-none translate-y-[1px]' : 'bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" /> Personal ({orderTypeStats.personalCount})
+            </button>
           </div>
         </div>
       </div>
@@ -801,7 +876,7 @@ export function SalesView({
                           <FileText className="w-5 h-5 text-[#1A1A1A]" />
                         </div>
                         <div>
-                          <h4 className="font-black text-sm uppercase">Pedido #{String(order.orderNumber).padStart(5, '0')}</h4>
+                          <h4 className="font-black text-sm uppercase">{order.id.startsWith('staff_') ? `Consumo Personal` : `Pedido #${String(order.orderNumber).padStart(5, '0')}`}</h4>
                           <p className="text-[10px] font-bold opacity-60">
                             {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
                           </p>
@@ -848,6 +923,13 @@ export function SalesView({
                               return (
                                 <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
                                   <ShoppingBag className="w-3 h-3" /> Llevar
+                                </span>
+                              );
+                            }
+                            if (norm === 'personal' || order.id.startsWith('staff_')) {
+                              return (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-400 rounded px-1.5 py-0.5 text-[10px] font-black uppercase w-max flex items-center gap-1">
+                                  <Users className="w-3 h-3" /> Consumo Personal
                                 </span>
                               );
                             }

@@ -1485,6 +1485,17 @@ export default function App() {
       });
       return;
     }
+    if (orderId.startsWith('staff_')) {
+      const sc = staffConsumptions.find(c => c.id === orderId);
+      if (!sc) return;
+      const scBranchId: '1' | '2' = (sc.branchId === '2' || sc.branchName === 'Sucursal 2' || sc.branchName === 'San Rafael') ? '2' : '1';
+      const { newRawMaterials, newDrinks } = getNetStockChanges((sc.items || []) as any, [], scBranchId);
+      const batch = writeBatch(db);
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, scBranchId);
+      batch.set(doc(db, 'staff_consumptions', orderId), { status: 'voided' }, { merge: true });
+      await batch.commit();
+      return;
+    }
     let order = orders.find(o => o.id === orderId);
     if (!order) {
       try {
@@ -1591,6 +1602,10 @@ export default function App() {
       });
       return;
     }
+    if (orderId.startsWith('staff_')) {
+      await handleDeleteStaffConsumption(orderId);
+      return;
+    }
     try {
       let order = orders.find(o => o.id === orderId);
       if (!order) {
@@ -1649,7 +1664,12 @@ export default function App() {
   };
 
   const handleAddStaffConsumption = async (consumption: StaffConsumption) => {
-    await setDoc(doc(db, 'staff_consumptions', consumption.id), consumption);
+    const branchId: '1' | '2' = (consumption.branchId === '2' || consumption.branchName === 'Sucursal 2' || consumption.branchName === 'San Rafael') ? '2' : '1';
+    const { newRawMaterials, newDrinks } = getNetStockChanges([], (consumption.items || []) as any, branchId);
+    const batch = writeBatch(db);
+    applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, branchId);
+    batch.set(doc(db, 'staff_consumptions', consumption.id), consumption);
+    await batch.commit();
   };
 
   const handleUpdateStaffConsumptionStatus = async (id: string, status: 'pending' | 'deducted') => {
@@ -1657,7 +1677,17 @@ export default function App() {
   };
 
   const handleDeleteStaffConsumption = async (id: string) => {
-    await deleteDoc(doc(db, 'staff_consumptions', id));
+    const target = staffConsumptions.find(c => c.id === id);
+    if (target && (target as any).status !== 'voided') {
+      const branchId: '1' | '2' = (target.branchId === '2' || target.branchName === 'Sucursal 2' || target.branchName === 'San Rafael') ? '2' : '1';
+      const { newRawMaterials, newDrinks } = getNetStockChanges((target.items || []) as any, [], branchId);
+      const batch = writeBatch(db);
+      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, branchId);
+      batch.delete(doc(db, 'staff_consumptions', id));
+      await batch.commit();
+    } else {
+      await deleteDoc(doc(db, 'staff_consumptions', id));
+    }
   };
 
   const handleSettleWorkerConsumptions = async (workerId: string) => {
@@ -2188,6 +2218,8 @@ export default function App() {
           ) : currentView === 'ventas' ? (
             <SalesView
               orders={orders}
+              staffConsumptions={staffConsumptions}
+              posItems={posItems}
               users={users}
               currentUser={currentUser}
               currentBranchId={currentBranchId}
