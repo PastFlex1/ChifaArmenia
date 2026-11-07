@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import Swal from 'sweetalert2';
+import { getServerNowMs } from '../utils/orderTime';
 
 interface StaffConsumptionViewProps {
   consumptions: StaffConsumption[];
@@ -240,7 +241,7 @@ export function StaffConsumptionView({
       workerId: worker.id,
       workerName: worker.name,
       workerCedula: worker.cedula,
-      date: new Date().toISOString(),
+      date: new Date(getServerNowMs()).toISOString(),
       items: itemsToSave,
       subtotal,
       discountAmount,

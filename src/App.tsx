@@ -15,10 +15,15 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { MesasView } from './components/MesasView';
 import { StaffConsumptionView } from './components/StaffConsumptionView';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, query, where, increment, getDoc, getDocs, getDocFromServer, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { buildStockDeltaPayload } from './utils/stock';
+import { getServerNowMs, setServerClockOffset, serverTimestampToMs, getOrderTimeMs, CLOCK_SKEW_TOLERANCE_MS } from './utils/orderTime';
 import Swal from 'sweetalert2';
 import { saveLocalDraft, getLocalDraft, removeLocalDraft, getAllLocalDrafts, measureFirebaseLatency, syncTableToFirestore, markTableAsFreed, isTableFreed, purgeDraftsForCompletedOrders, getTableDocId, SyncState, LatencyStatus } from './utils/syncManager';
 import { setupKeepAlive } from './utils/keepAlive';
+
+// Señal interna: la mesa ya fue cobrada/liberada en otra computadora durante el cobro
+const TABLE_ALREADY_CLOSED = 'TABLE_ALREADY_CLOSED';
 
 export default function App() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
@@ -42,6 +47,10 @@ export default function App() {
   const locallyProcessedTablesRef = useRef<Map<string, number>>(new Map());
   // Registro de idempotencia en memoria por cobro (mesa + items + total)
   const processedCheckoutsRef = useRef<Map<string, number>>(new Map());
+  // Marca de tiempo de la versión de la mesa (active_tables) que este equipo cargó o guardó por última vez
+  const loadedTableTimestampRef = useRef<number>(0);
+  // Indica si la mesa abierta existía en Firebase (active_tables) al cargarla o tras guardarla desde aquí
+  const tableWasRemoteRef = useRef<boolean>(false);
 
   // Sync State & Latency Monitor
   const [syncState, setSyncState] = useState<SyncState>('synced');
@@ -135,26 +144,20 @@ export default function App() {
         rawMaterials.forEach(rm => {
           const matrizStock = getStockForBranch(rm, '1');
           const ref = doc(db, 'rawMaterials', rm.id);
-          const currentStocks = rm.stocks || {};
+          // Ruta de campo: solo toca la clave de San Rafael, sin reemplazar el mapa completo
           batch.update(ref, {
             stock_sucursal2: matrizStock,
-            stocks: {
-              ...currentStocks,
-              '2': matrizStock
-            }
+            'stocks.2': matrizStock
           });
         });
       } else {
         drinks.forEach(dr => {
           const matrizStock = getStockForBranch(dr, '1');
           const ref = doc(db, 'drinks', dr.id);
-          const currentStocks = dr.stocks || {};
+          // Ruta de campo: solo toca la clave de San Rafael, sin reemplazar el mapa completo
           batch.update(ref, {
             stock_sucursal2: matrizStock,
-            stocks: {
-              ...currentStocks,
-              '2': matrizStock
-            }
+            'stocks.2': matrizStock
           });
         });
       }
@@ -451,7 +454,7 @@ export default function App() {
   // Dedicated Orders Listener with TimeRange Filtering
   useEffect(() => {
     let qOrders = collection(db, 'orders') as any;
-    const now = new Date();
+    const now = new Date(getServerNowMs());
 
     if (timeRange === 'day') {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -519,21 +522,18 @@ export default function App() {
       setOrders(fetchedOrders);
     };
 
-    if (timeRange === 'day') {
-      const unsubOrders = onSnapshot(qOrders, snapshot => {
-        processOrdersSnapshot(snapshot, true);
-      }, (error) => {
-        console.error("Error fetching orders:", error);
-      });
-      return () => unsubOrders();
-    } else {
-      getDocs(qOrders).then(snapshot => {
-        processOrdersSnapshot(snapshot, false);
-      }).catch(error => {
-        console.error("Error fetching historical orders:", error);
-      });
-      return () => {};
-    }
+    // Escucha en tiempo real para TODOS los rangos: las ventas nuevas aparecen sin recargar
+    // y, si la primera respuesta vino de la caché local (internet lento), se completa al llegar la del servidor.
+    let isFirstSnapshot = true;
+    const unsubOrders = onSnapshot(qOrders, snapshot => {
+      // En rangos históricos, la carga inicial no debe disparar liberaciones de mesas antiguas
+      const applySideEffects = timeRange === 'day' || !isFirstSnapshot;
+      isFirstSnapshot = false;
+      processOrdersSnapshot(snapshot, applySideEffects);
+    }, (error) => {
+      console.error("Error fetching orders:", error);
+    });
+    return () => unsubOrders();
   }, [timeRange, customDateRange, currentBranchId]);
 
   // Purga continua y automática de localStorage para mesas cobradas
@@ -608,8 +608,8 @@ export default function App() {
     });
 
     const deliveryFees: MenuItem[] = [
-      { id: '__delivery_2__', name: 'DOMICILIO $2', category: 'Bebidas', price: 2, cost: 0, isDrink: false },
-      { id: '__delivery_3__', name: 'DOMICILIO $3', category: 'Bebidas', price: 3, cost: 0, isDrink: false },
+      { id: '__delivery_2__', name: 'DOMICILIO $2', category: 'Llevar', price: 2, cost: 0, isDrink: false },
+      { id: '__delivery_3__', name: 'DOMICILIO $3', category: 'Llevar', price: 3, cost: 0, isDrink: false },
     ];
 
     return [...d, ...bev, ...c, ...deliveryFees];
@@ -644,7 +644,7 @@ export default function App() {
       let minAvailable = Infinity;
       combo.items.forEach((cItem: any) => {
         if (cItem.type === 'drink') {
-          const d = branchDrinks.find(dr => dr.id === cItem.itemId);
+          const d = availabilityStock.drinks.find(dr => dr.id === cItem.itemId);
           if (d) {
             const available = Math.floor(d.stock / cItem.quantity);
             if (available < minAvailable) minAvailable = available;
@@ -655,7 +655,7 @@ export default function App() {
           const dish = dishes.find(d => d.id === cItem.itemId);
           if (dish && dish.ingredients) {
             dish.ingredients.forEach(ing => {
-              const rm = branchRawMaterials.find(r => r.id === ing.rawMaterialId);
+              const rm = availabilityStock.rawMaterials.find(r => r.id === ing.rawMaterialId);
               if (rm) {
                 const available = Math.floor(rm.stock / (ing.quantity * cItem.quantity));
                 if (available < minAvailable) minAvailable = available;
@@ -668,7 +668,7 @@ export default function App() {
       });
       return minAvailable;
     } else if (menuItem.isDrink) {
-      const d = branchDrinks.find(dr => dr.id === menuItem.id);
+      const d = availabilityStock.drinks.find(dr => dr.id === menuItem.id);
       return d ? d.stock : 0;
     } else {
       // Dish doesn't track strictly without ingredients. If no ingredients or it's just a dish without recipe recorded:
@@ -677,7 +677,7 @@ export default function App() {
 
       let minAvailable = Infinity;
       dish.ingredients.forEach(ing => {
-        const rm = branchRawMaterials.find(r => r.id === ing.rawMaterialId);
+        const rm = availabilityStock.rawMaterials.find(r => r.id === ing.rawMaterialId);
         if (rm) {
           const available = Math.floor(rm.stock / ing.quantity);
           if (available < minAvailable) minAvailable = available;
@@ -839,6 +839,11 @@ export default function App() {
       loadedNotes = localDraft?.notes || '';
       loadedCustomer = localDraft?.customerName || '';
     }
+
+    const loadedFirestoreTs = firestoreTable?.updatedAtTimestamp || (firestoreTable?.updatedAt ? new Date(firestoreTable.updatedAt).getTime() : 0);
+    const loadedDraftTs = localDraft?.updatedAtTimestamp || (localDraft?.updatedAt ? new Date(localDraft.updatedAt).getTime() : 0);
+    loadedTableTimestampRef.current = Math.max(loadedFirestoreTs, loadedDraftTs);
+    tableWasRemoteRef.current = Boolean(firestoreTable);
 
     setCart(loadedItems);
     setTableNumber(tNumber);
@@ -1010,7 +1015,7 @@ export default function App() {
                 const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
                 if (drinkIndex >= 0) {
                   const newVal = newDrinks[drinkIndex].stock - (cQty * itemQty * multiplier);
-                  newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                  newDrinks[drinkIndex].stock = Math.round(newVal * 1000) / 1000;
                 }
               } else {
                 const dish = dishes.find(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
@@ -1020,7 +1025,7 @@ export default function App() {
                     if (rmIndex >= 0) {
                       const ingQty = Number(ing.quantity) || 0;
                       const newVal = newRawMaterials[rmIndex].stock - (ingQty * cQty * itemQty * multiplier);
-                      newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                      newRawMaterials[rmIndex].stock = Math.round(newVal * 1000) / 1000;
                     }
                   });
                 }
@@ -1036,7 +1041,7 @@ export default function App() {
               );
           if (drinkIndex >= 0) {
             const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
-            newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+            newDrinks[drinkIndex].stock = Math.round(newVal * 1000) / 1000;
           }
         } else {
           const dish = dishes.find(d => 
@@ -1049,7 +1054,7 @@ export default function App() {
               if (rmIndex >= 0) {
                 const ingQty = Number(ing.quantity) || 0;
                 const newVal = newRawMaterials[rmIndex].stock - (ingQty * itemQty * multiplier);
-                newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                newRawMaterials[rmIndex].stock = Math.round(newVal * 1000) / 1000;
               }
             });
           }
@@ -1071,42 +1076,33 @@ export default function App() {
   ) => {
     newRawMaterials.forEach((rm) => {
       const origRm = rawMaterials.find(r => r.id === rm.id);
-      const origStock = origRm ? getStockForBranch(origRm, branchId) : 0;
-      if (rm.stock !== origStock) {
-        const currentStocks = origRm?.stocks || {};
-        if (branchId === '2') {
-          batch.set(doc(db, 'rawMaterials', rm.id), {
-            stock_sucursal2: rm.stock,
-            stocks: { ...currentStocks, '2': rm.stock }
-          }, { merge: true });
-        } else {
-          batch.set(doc(db, 'rawMaterials', rm.id), {
-            stock: rm.stock,
-            stocks: { ...currentStocks, '1': rm.stock }
-          }, { merge: true });
-        }
-      }
+      const payload = buildStockDeltaPayload(origRm, rm.stock, branchId);
+      if (payload) batch.set(doc(db, 'rawMaterials', rm.id), payload, { merge: true });
     });
 
     newDrinks.forEach((drink) => {
       const origDrink = drinks.find(d => d.id === drink.id);
-      const origStock = origDrink ? getStockForBranch(origDrink, branchId) : 0;
-      if (drink.stock !== origStock) {
-        const currentStocks = origDrink?.stocks || {};
-        if (branchId === '2') {
-          batch.set(doc(db, 'drinks', drink.id), {
-            stock_sucursal2: drink.stock,
-            stocks: { ...currentStocks, '2': drink.stock }
-          }, { merge: true });
-        } else {
-          batch.set(doc(db, 'drinks', drink.id), {
-            stock: drink.stock,
-            stocks: { ...currentStocks, '1': drink.stock }
-          }, { merge: true });
-        }
-      }
+      const payload = buildStockDeltaPayload(origDrink, drink.stock, branchId);
+      if (payload) batch.set(doc(db, 'drinks', drink.id), payload, { merge: true });
     });
   };
+
+  // Stock disponible para la mesa abierta: los productos que ya tiene guardados en Firebase ya fueron
+  // descontados del inventario, así que se suman de vuelta para no contarlos dos veces al validar.
+  const availabilityStock = useMemo(() => {
+    const reservedTable = activeTableId
+      ? activeTables.find(t =>
+          (t.branchId || '1') === currentBranchId &&
+          (t.tableNumber || '').trim().toLowerCase() === activeTableId.trim().toLowerCase()
+        )
+      : undefined;
+    if (!reservedTable?.items?.length) {
+      return { rawMaterials: branchRawMaterials, drinks: branchDrinks };
+    }
+    const { newRawMaterials, newDrinks } = getNetStockChanges(reservedTable.items, [], currentBranchId);
+    return { rawMaterials: newRawMaterials, drinks: newDrinks };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTableId, activeTables, currentBranchId, branchRawMaterials, branchDrinks, dishes, combos]);
 
   const handleSaveTable = async (customCart?: CartItem[] | any) => {
     const targetTable = (activeTableId || tableNumber).trim();
@@ -1122,7 +1118,18 @@ export default function App() {
 
     // Eliminado bloqueo para permitir guardar y enviar a cocina comandas de Uber Eats, Rappi, etc.
     const itemsToSave = Array.isArray(customCart) ? customCart : cart;
-    if (itemsToSave.length === 0 || isCheckingOut) return;
+    if (isCheckingOut) return;
+    if (itemsToSave.length === 0) {
+      // Mesa guardada que quedó sin productos: liberarla y devolver el stock en vez de ignorar el guardado
+      const hasSavedTable = activeTableId && activeTables.some(t =>
+        (t.branchId || '1') === currentBranchId &&
+        (t.tableNumber || '').trim().toLowerCase() === activeTableId.trim().toLowerCase()
+      );
+      if (hasSavedTable) {
+        await handleFreeTableWithoutCheckout();
+      }
+      return;
+    }
     setIsCheckingOut(true);
 
     const tableOrder = saveLocalDraft(
@@ -1156,6 +1163,23 @@ export default function App() {
     }
   };
 
+  const verifyOrderServerTime = async (orderId: string, localDateMs: number) => {
+    try {
+      const snap = await getDocFromServer(doc(db, 'orders', orderId));
+      const serverMs = serverTimestampToMs(snap.data()?.createdAtServer);
+      if (serverMs === null) return;
+      const skew = serverMs - localDateMs;
+      // localDateMs ya incluía el desfase anterior; acumular para obtener el desfase total del reloj local
+      setServerClockOffset(getServerNowMs() - Date.now() + skew);
+      if (Math.abs(skew) >= CLOCK_SKEW_TOLERANCE_MS) {
+        console.warn(`Reloj del equipo desfasado ${Math.round(skew / 1000)}s; corrigiendo fecha de la venta ${orderId}`);
+        await setDoc(doc(db, 'orders', orderId), { date: new Date(serverMs).toISOString() }, { merge: true });
+      }
+    } catch (err) {
+      console.warn('No se pudo verificar la hora del servidor para la venta:', err);
+    }
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0 || isCheckingOut) return;
 
@@ -1182,25 +1206,47 @@ export default function App() {
       .join('|');
     const idempotencyKey = `${currentBranchId}_${targetTableId.toLowerCase()}_${cartTotal.toFixed(2)}_${cartSignature}`;
 
-    const lastProcessedTime = processedCheckoutsRef.current.get(idempotencyKey);
-    if (lastProcessedTime && (now - lastProcessedTime) < 60000) {
-      Swal.fire({
-        title: 'Cobro en Proceso o Duplicado',
-        text: 'Este pedido ya está siendo procesado o se cobró hace menos de un minuto.',
-        icon: 'warning',
-        confirmButtonColor: '#000'
-      });
-      setIsCheckingOut(false);
-      return;
-    }
-
-    // Bloqueo inmediato en memoria contra doble-clic o concurrencia
-    processedCheckoutsRef.current.set(idempotencyKey, now);
-
     // Limpieza periódica de claves antiguas (> 2 minutos)
     for (const [key, timestamp] of processedCheckoutsRef.current.entries()) {
       if (now - timestamp > 120000) {
         processedCheckoutsRef.current.delete(key);
+      }
+    }
+
+    // 1. Verificar que la mesa no haya sido modificada desde otro equipo (carrito desactualizado)
+    if (activeTableId && targetDocId && navigator.onLine) {
+      try {
+        const freshSnap = await Promise.race([
+          getDoc(doc(db, 'active_tables', targetDocId)),
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 3000))
+        ]);
+        if (freshSnap && freshSnap.exists()) {
+          const remote = freshSnap.data() as TableOrder;
+          const remoteTs = remote.updatedAtTimestamp || (remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0);
+          if (remoteTs > loadedTableTimestampRef.current && Array.isArray(remote.items)) {
+            // Fusionar: conservar lo agregado aquí y sumar lo que otro equipo agregó
+            const merged: CartItem[] = remote.items.map(rItem => {
+              const local = cart.find(c => c.menuItem.id === rItem.menuItem.id);
+              if (!local) return rItem;
+              return { ...rItem, quantity: Math.max(Number(rItem.quantity) || 0, Number(local.quantity) || 0) };
+            });
+            cart.forEach(c => {
+              if (!merged.some(m => m.menuItem.id === c.menuItem.id)) merged.push(c);
+            });
+            loadedTableTimestampRef.current = remoteTs;
+            setCart(merged);
+            await Swal.fire({
+              title: 'Mesa actualizada desde otro equipo',
+              text: 'Se agregaron productos a esta mesa desde otro dispositivo. El carrito se actualizó: revísalo y vuelve a presionar Cobrar.',
+              icon: 'warning',
+              confirmButtonColor: '#000'
+            });
+            setIsCheckingOut(false);
+            return;
+          }
+        }
+      } catch (freshErr) {
+        console.warn('No se pudo verificar la versión actual de la mesa:', freshErr);
       }
     }
 
@@ -1209,10 +1255,12 @@ export default function App() {
         locallyProcessedTablesRef.current.set(targetDocId, Date.now());
       }
 
-      // Validación de duplicados en orders con ventana de 60 segundos
-      const sixtySecAgo = now - 60000;
+      // 2. Posible duplicado: NUNCA descartar en silencio, preguntar al cajero
+      const lastProcessedTime = processedCheckoutsRef.current.get(idempotencyKey);
+      const sixtySecAgo = getServerNowMs() - 60000;
       const recentDuplicate = orders.find(o => {
-        const oTime = new Date(o.date).getTime();
+        if (o.status === 'voided') return false;
+        const oTime = getOrderTimeMs(o);
         const oBranch = o.branchId || '1';
         if (oBranch !== currentBranchId || oTime < sixtySecAgo || Math.abs(o.total - cartTotal) > 0.01) {
           return false;
@@ -1232,18 +1280,36 @@ export default function App() {
         return true;
       });
 
-      if (recentDuplicate) {
-        Swal.fire({
-          title: 'Venta Ya Registrada',
-          text: `Este pedido ya fue registrado hace un momento (Pedido #${String(recentDuplicate.orderNumber).padStart(5, '0')}).`,
-          icon: 'info',
-          confirmButtonColor: '#000'
+      if (recentDuplicate || (lastProcessedTime && (now - lastProcessedTime) < 60000)) {
+        const dupLabel = recentDuplicate
+          ? `el Pedido #${String(recentDuplicate.orderNumber).padStart(5, '0')}`
+          : 'otro pedido';
+        const answer = await Swal.fire({
+          title: '¿Venta repetida?',
+          text: `Hace menos de un minuto se registró ${dupLabel} en "${targetTableId}" con los mismos productos y el mismo total. ¿Es una venta NUEVA (otro cliente) o es la misma que ya se cobró?`,
+          icon: 'question',
+          showCancelButton: true,
+          showDenyButton: true,
+          confirmButtonText: 'Es una venta nueva, registrar',
+          denyButtonText: 'Ya estaba cobrada, descartar',
+          cancelButtonText: 'Volver',
+          confirmButtonColor: '#B91C1C',
+          denyButtonColor: '#1A1A1A'
         });
-        clearCart();
-        setActiveTableId(null);
-        setIsCheckingOut(false);
-        return;
+        if (answer.isDenied) {
+          clearCart();
+          setActiveTableId(null);
+          setIsCheckingOut(false);
+          return;
+        }
+        if (!answer.isConfirmed) {
+          setIsCheckingOut(false);
+          return;
+        }
       }
+
+      // Bloqueo en memoria contra doble-clic una vez confirmado el cobro
+      processedCheckoutsRef.current.set(idempotencyKey, now);
 
       // 5. Auditar y corregir el Doble Descuento de Inventario
       const matchedActive = targetDocId 
@@ -1255,34 +1321,16 @@ export default function App() {
       const totalCost = cart.reduce((sum, item) => sum + (item.menuItem.cost * item.quantity), 0);
       const profit = cartTotal - totalCost;
 
-      // 1. Garantizar que orderNumber (Correlativo) NUNCA se repita
-      // Consulta fresca a Firestore si estamos online
-      let remoteCounter = 0;
-      try {
-        if (navigator.onLine) {
-          const counterDoc = await getDoc(doc(db, 'counters', 'orders'));
-          if (counterDoc.exists()) {
-            remoteCounter = Number(counterDoc.data()?.count) || 0;
-          }
-        }
-      } catch (err) {
-        console.warn("No se pudo obtener el contador remoto fresco:", err);
-      }
-
       const maxOrder = orders.reduce((max, o) => Math.max(max, Number(o.orderNumber) || 0), 0);
-      const currentCount = Math.max(remoteCounter, Number(orderCounter) || 0, maxOrder);
-      const nextOrderNumber = currentCount + 1;
-
-      // Actualización optimista inmediata en memoria para evitar que la siguiente orden en la misma caja reutilice el número
-      setOrderCounter(nextOrderNumber);
 
       // Prevenir colisión de IDs con sufijo aleatorio y timestamp del servidor
       const orderId = `${currentBranchId}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const orderDate = new Date().toISOString();
+      // Hora corregida con el desfase medido contra el servidor (evita ventas en el día equivocado)
+      const orderDate = new Date(getServerNowMs()).toISOString();
 
-      const newOrder: Order = {
+      const buildOrder = (orderNumber: number): Order => ({
         id: orderId,
-        orderNumber: nextOrderNumber,
+        orderNumber,
         date: orderDate,
         createdAtServer: serverTimestamp(),
         customerName: customerName.trim(),
@@ -1301,34 +1349,89 @@ export default function App() {
         sellerId: currentUser?.id || '',
         sellerName: currentUser?.name || '',
         status: 'active'
+      });
+
+      const counterRef = doc(db, 'counters', 'orders');
+
+      // Escrituras del cobro; sirven tanto para la transacción (online) como para el batch (offline)
+      const writeCheckout = (w: { set: (...args: any[]) => any; delete: (...args: any[]) => any }, order: Order) => {
+        w.set(counterRef, { count: order.orderNumber }, { merge: true });
+        applyStockUpdatesToBatch(w, newRawMaterials, newDrinks, currentBranchId);
+        w.set(doc(db, 'orders', order.id), order);
+        if (targetTableId) {
+          const docId = targetDocId || getTableDocId(currentBranchId, targetTableId);
+          w.delete(doc(db, 'active_tables', docId));
+          if (currentBranchId === '1') {
+            w.delete(doc(db, 'active_tables', targetTableId));
+          }
+          if (matchedActive && matchedActive.id && matchedActive.id !== docId) {
+            w.delete(doc(db, 'active_tables', matchedActive.id));
+          }
+          w.set(doc(db, 'freed_tables', docId), {
+            tableNumber: targetTableId,
+            branchId: currentBranchId,
+            freedAt: orderDate,
+            freedAtTimestamp: Date.now(),
+            reason: 'checkout'
+          });
+        }
       };
 
-      const batch = writeBatch(db);
-      // Blindar actualización de contador atómica y consistente con el número emitido
-      batch.set(doc(db, 'counters', 'orders'), { count: nextOrderNumber }, { merge: true });
+      let newOrder: Order = buildOrder(0);
+      let committed = false;
 
-      applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, currentBranchId);
-
-      batch.set(doc(db, 'orders', newOrder.id), newOrder);
-      if (targetTableId) {
-        const docId = targetDocId || getTableDocId(currentBranchId, targetTableId);
-        batch.delete(doc(db, 'active_tables', docId));
-        if (currentBranchId === '1') {
-          batch.delete(doc(db, 'active_tables', targetTableId));
+      // Cobro simultáneo en varias computadoras: transacción atómica en el servidor.
+      // - El correlativo se lee y se incrementa en la misma operación (dos cajas nunca obtienen el mismo número).
+      // - Si la mesa ya fue cobrada/liberada en otra computadora, se aborta y NO se registra una segunda venta.
+      // Firestore reintenta solo la transacción si otra caja escribió el contador al mismo tiempo.
+      if (navigator.onLine && latencyInfo.isOnline) {
+        try {
+          newOrder = await runTransaction(db, async (tx) => {
+            const counterSnap = await tx.get(counterRef);
+            // Si esta mesa estaba guardada en Firebase, debe seguir abierta para poder cobrarla
+            if (activeTableId && targetDocId && (matchedActive || tableWasRemoteRef.current)) {
+              const candidateIds = Array.from(new Set([
+                matchedActive?.id,
+                targetDocId,
+                currentBranchId === '1' ? targetTableId : undefined
+              ].filter(Boolean) as string[]));
+              let stillOpen = false;
+              for (const cid of candidateIds) {
+                const tableSnap = await tx.get(doc(db, 'active_tables', cid));
+                if (tableSnap.exists()) stillOpen = true;
+              }
+              if (!stillOpen) {
+                throw new Error(TABLE_ALREADY_CLOSED);
+              }
+            }
+            const remoteCount = Number(counterSnap.data()?.count) || 0;
+            const order = buildOrder(Math.max(remoteCount, maxOrder) + 1);
+            writeCheckout(tx, order);
+            return order;
+          });
+          committed = true;
+        } catch (txErr: any) {
+          if (txErr?.message === TABLE_ALREADY_CLOSED) throw txErr;
+          const isConnectivity = txErr?.code === 'unavailable' || txErr?.code === 'deadline-exceeded' || /offline/i.test(txErr?.message || '');
+          if (!isConnectivity) throw txErr;
+          console.warn('Transacción no disponible (sin conexión). Se registrará la venta en modo offline:', txErr);
         }
-        if (matchedActive && matchedActive.id && matchedActive.id !== docId) {
-          batch.delete(doc(db, 'active_tables', matchedActive.id));
-        }
-        batch.set(doc(db, 'freed_tables', docId), {
-          tableNumber: targetTableId,
-          branchId: currentBranchId,
-          freedAt: orderDate,
-          freedAtTimestamp: Date.now(),
-          reason: 'checkout'
-        });
       }
 
-      await batch.commit();
+      if (!committed) {
+        // Modo offline: la venta queda en cola local y se sube al volver el internet
+        const offlineOrder = buildOrder(Math.max(Number(orderCounter) || 0, maxOrder) + 1);
+        const batch = writeBatch(db);
+        writeCheckout(batch, offlineOrder);
+        await batch.commit();
+        newOrder = offlineOrder;
+      }
+
+      // Actualización inmediata en memoria del correlativo emitido
+      setOrderCounter(newOrder.orderNumber);
+
+      // Medir el desfase del reloj de este equipo contra el servidor y corregir la fecha si está mal
+      verifyOrderServerTime(newOrder.id, Date.parse(orderDate));
 
       // 3. Snapshot Inmutable y Limpieza Estricta
       setCompletedOrder(structuredClone(newOrder));
@@ -1338,8 +1441,21 @@ export default function App() {
       clearCart();
       setActiveTableId(null);
     } catch (e: any) {
-      console.error("Error confirming order:", e);
       processedCheckoutsRef.current.delete(idempotencyKey);
+      if (e?.message === TABLE_ALREADY_CLOSED) {
+        // Otra computadora cobró o liberó esta mesa al mismo tiempo: no se registra una venta doble
+        Swal.fire({
+          title: 'Mesa ya cobrada en otra computadora',
+          text: `La mesa "${targetTableId}" fue cobrada o liberada desde otro equipo hace un momento. No se registró una segunda venta. Revisa el historial de ventas.`,
+          icon: 'info',
+          confirmButtonColor: '#000'
+        });
+        clearCart();
+        setActiveTableId(null);
+        setCurrentView('mesas');
+        return;
+      }
+      console.error("Error confirming order:", e);
       const errMsg = e?.message || 'Ocurrió un error inesperado en Firestore.';
       Swal.fire({
         title: 'Error al confirmar el pedido',
@@ -1488,12 +1604,20 @@ export default function App() {
     if (orderId.startsWith('staff_')) {
       const sc = staffConsumptions.find(c => c.id === orderId);
       if (!sc) return;
+      if ((sc as any).status === 'voided') {
+        // Evitar devolver el stock dos veces
+        Swal.fire({ title: 'Ya Anulado', text: 'Este consumo de personal ya fue anulado previamente.', icon: 'info', confirmButtonColor: '#000' });
+        return;
+      }
       const scBranchId: '1' | '2' = (sc.branchId === '2' || sc.branchName === 'Sucursal 2' || sc.branchName === 'San Rafael') ? '2' : '1';
       const { newRawMaterials, newDrinks } = getNetStockChanges((sc.items || []) as any, [], scBranchId);
       const batch = writeBatch(db);
       applyStockUpdatesToBatch(batch, newRawMaterials, newDrinks, scBranchId);
       batch.set(doc(db, 'staff_consumptions', orderId), { status: 'voided' }, { merge: true });
       await batch.commit();
+      if (completedOrder?.id === orderId) {
+        setCompletedOrder(prev => prev ? { ...prev, status: 'voided' } : null);
+      }
       return;
     }
     let order = orders.find(o => o.id === orderId);
@@ -1765,8 +1889,12 @@ export default function App() {
     try {
       const targetTableId = (activeTableId || tableNumber).trim();
       const targetDocId = targetTableId ? getTableDocId(currentBranchId, targetTableId) : '';
-      
-      const previousTable = activeTables.find(t => 
+      if (targetDocId) {
+        // Marcar como acción local para no mostrarse a sí mismo la alerta de "Mesa Liberada"
+        locallyProcessedTablesRef.current.set(targetDocId, Date.now());
+      }
+
+      const previousTable = activeTables.find(t =>
         getTableDocId(t.branchId || '1', t.tableNumber) === targetDocId
       );
       const oldItems = previousTable ? previousTable.items : [];
@@ -1797,7 +1925,7 @@ export default function App() {
         workerId: worker.id,
         workerName: worker.name,
         workerCedula: worker.cedula,
-        date: new Date().toISOString(),
+        date: new Date(getServerNowMs()).toISOString(),
         items: cart.map(i => ({
           name: i.menuItem.name,
           quantity: i.quantity,
@@ -2208,14 +2336,14 @@ export default function App() {
                 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload.stocks = { ...(existing?.stocks || {}), '2': inputStock };
+                  payload.stocks = { '2': inputStock }; // set+merge mezcla el mapa: no se toca la otra sucursal
                   if (!existing) {
                     payload.stock = 0;
                     payload.stocks['1'] = 0;
                   }
                 } else {
                   payload.stock = inputStock;
-                  payload.stocks = { ...(existing?.stocks || {}), '1': inputStock };
+                  payload.stocks = { '1': inputStock }; // set+merge mezcla el mapa: no se toca la otra sucursal
                   if (!existing) {
                     payload.stock_sucursal2 = 0;
                     payload.stocks['2'] = 0;
@@ -2338,14 +2466,14 @@ export default function App() {
 
                 if (currentBranchId === '2') {
                   payload.stock_sucursal2 = inputStock;
-                  payload.stocks = { ...(existing?.stocks || {}), '2': inputStock };
+                  payload.stocks = { '2': inputStock }; // set+merge mezcla el mapa: no se toca la otra sucursal
                   if (!existing) {
                     payload.stock = 0;
                     payload.stocks['1'] = 0;
                   }
                 } else {
                   payload.stock = inputStock;
-                  payload.stocks = { ...(existing?.stocks || {}), '1': inputStock };
+                  payload.stocks = { '1': inputStock }; // set+merge mezcla el mapa: no se toca la otra sucursal
                   if (!existing) {
                     payload.stock_sucursal2 = 0;
                     payload.stocks['2'] = 0;
@@ -3129,11 +3257,14 @@ export default function App() {
           isAdmin={currentUser?.role === 'Administrador'}
           onVoidOrder={currentUser?.role === 'Administrador' ? handleVoidOrder : undefined}
           onKitchenPrint={async () => {
+            // Solo una pre-cuenta corresponde al carrito actual. Reimprimir la comanda de una venta
+            // del historial NO debe marcar como "ya impresos" los productos del pedido que está en curso.
+            if (!completedOrder.id.startsWith('preview')) return;
             const newCart = cart.map(item => ({ ...item, printedQuantity: item.quantity }));
             setCart(newCart);
             const targetTable = (activeTableId || tableNumber).trim();
             const normTarget = targetTable.toLowerCase();
-            if (normTarget && normTarget !== 'para llevar' && normTarget !== 'llevar' && normTarget !== 'domicilio' && completedOrder.id.startsWith('preview')) {
+            if (normTarget && normTarget !== 'para llevar' && normTarget !== 'llevar' && normTarget !== 'domicilio') {
               const tableOrder = saveLocalDraft(
                 targetTable, 
                 newCart, 
@@ -3144,10 +3275,14 @@ export default function App() {
                 orderNotes.trim() || undefined,
                 customerName.trim() || undefined
               );
+              if (tableOrder?.updatedAtTimestamp) {
+                loadedTableTimestampRef.current = tableOrder.updatedAtTimestamp;
+              }
               if (latencyInfo.isOnline && tableOrder) {
                 const success = await syncTableToFirestore(tableOrder, activeTables, rawMaterials, drinks, dishes, combos, orders);
                 if (success) {
                   removeLocalDraft(targetTable, currentBranchId);
+                  tableWasRemoteRef.current = true;
                 }
               }
             }

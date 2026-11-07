@@ -21,7 +21,7 @@ export function ReceiptModal({ order, onClose, onKitchenPrint, onConfirmCheckout
   // 3. Snapshot Inmutable: Aislar datos del ticket de cualquier mutación o limpieza de estado global
   const ticketSnapshot = React.useMemo(() => {
     return structuredClone(order);
-  }, [order.id, order.orderNumber, order.tableNumber, order.total, order.date]);
+  }, [order.id, order.orderNumber, order.tableNumber, order.total, order.date, order.status]);
 
   const [ticketType, setTicketType] = useState<'customer' | 'kitchen'>('customer');
   const [isPrinting, setIsPrinting] = useState(false);

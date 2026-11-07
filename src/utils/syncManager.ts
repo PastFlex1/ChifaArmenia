@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { buildStockDeltaPayload } from './stock';
 import { TableOrder, CartItem, RawMaterial, Drink, Dish, Order, getStockForBranch } from '../types';
 
 const DRAFTS_STORAGE_KEY = 'chifa_active_tables_drafts';
@@ -363,7 +364,7 @@ export async function syncTableToFirestore(
                 const drinkIndex = newDrinks.findIndex(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
                 if (drinkIndex >= 0) {
                   const newVal = newDrinks[drinkIndex].stock - (cQty * itemQty * multiplier);
-                  newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                  newDrinks[drinkIndex].stock = Math.round(newVal * 1000) / 1000;
                 }
               } else {
                 const dish = dishes.find(d => d.id === cItem.itemId || (cItem.name && d.name?.trim().toLowerCase() === cItem.name?.trim().toLowerCase()));
@@ -373,7 +374,7 @@ export async function syncTableToFirestore(
                     if (rmIndex >= 0) {
                       const ingQty = Number(ing.quantity) || 0;
                       const newVal = newRawMaterials[rmIndex].stock - (ingQty * cQty * itemQty * multiplier);
-                      newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                      newRawMaterials[rmIndex].stock = Math.round(newVal * 1000) / 1000;
                     }
                   });
                 }
@@ -387,7 +388,7 @@ export async function syncTableToFirestore(
           );
           if (drinkIndex >= 0) {
             const newVal = newDrinks[drinkIndex].stock - (itemQty * multiplier);
-            newDrinks[drinkIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+            newDrinks[drinkIndex].stock = Math.round(newVal * 1000) / 1000;
           }
         } else {
           const dish = dishes.find(d => 
@@ -400,7 +401,7 @@ export async function syncTableToFirestore(
               if (rmIndex >= 0) {
                 const ingQty = Number(ing.quantity) || 0;
                 const newVal = newRawMaterials[rmIndex].stock - (ingQty * itemQty * multiplier);
-                newRawMaterials[rmIndex].stock = Math.max(0, Math.round(newVal * 1000) / 1000);
+                newRawMaterials[rmIndex].stock = Math.round(newVal * 1000) / 1000;
               }
             });
           }
@@ -414,53 +415,16 @@ export async function syncTableToFirestore(
     const batch = writeBatch(db);
     
     // 4. Blindar inventario con set(... { merge: true }) para evitar abortos de batch
+    // Incrementos atómicos: varias computadoras pueden modificar el stock a la vez sin pisarse
     newRawMaterials.forEach((rm) => {
       const origRm = rawMaterials.find(r => r.id === rm.id);
-      const origStock = origRm ? getStockForBranch(origRm, branchId) : 0;
-      if (rm.stock !== origStock) {
-        const currentStocks = origRm?.stocks || {};
-        if (branchId === '2') {
-          batch.set(doc(db, 'rawMaterials', rm.id), {
-            stock_sucursal2: rm.stock,
-            stocks: {
-              ...currentStocks,
-              '2': rm.stock
-            }
-          }, { merge: true });
-        } else {
-          batch.set(doc(db, 'rawMaterials', rm.id), {
-            stock: rm.stock,
-            stocks: {
-              ...currentStocks,
-              '1': rm.stock
-            }
-          }, { merge: true });
-        }
-      }
+      const payload = buildStockDeltaPayload(origRm, rm.stock, branchId);
+      if (payload) batch.set(doc(db, 'rawMaterials', rm.id), payload, { merge: true });
     });
     newDrinks.forEach((drink) => {
       const origDrink = drinks.find(d => d.id === drink.id);
-      const origStock = origDrink ? getStockForBranch(origDrink, branchId) : 0;
-      if (drink.stock !== origStock) {
-        const currentStocks = origDrink?.stocks || {};
-        if (branchId === '2') {
-          batch.set(doc(db, 'drinks', drink.id), {
-            stock_sucursal2: drink.stock,
-            stocks: {
-              ...currentStocks,
-              '2': drink.stock
-            }
-          }, { merge: true });
-        } else {
-          batch.set(doc(db, 'drinks', drink.id), {
-            stock: drink.stock,
-            stocks: {
-              ...currentStocks,
-              '1': drink.stock
-            }
-          }, { merge: true });
-        }
-      }
+      const payload = buildStockDeltaPayload(origDrink, drink.stock, branchId);
+      if (payload) batch.set(doc(db, 'drinks', drink.id), payload, { merge: true });
     });
 
     if (newItems.length === 0) {

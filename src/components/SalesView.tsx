@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { generateInventoryPDF } from '../utils/pdfGenerator';
 import { getStaffConsumptionTotals } from './StaffConsumptionView';
 import Swal from 'sweetalert2';
+import { getOrderTimeMs, getServerNowMs } from '../utils/orderTime';
 
 interface SalesViewProps {
   orders: Order[];
@@ -90,7 +91,7 @@ export function SalesView({
       });
 
     return [...orders, ...convertedStaff].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      (a, b) => getOrderTimeMs(a) - getOrderTimeMs(b)
     );
   }, [orders, staffConsumptions, posItems]);
 
@@ -106,6 +107,16 @@ export function SalesView({
   const [selectedOrderType, setSelectedOrderType] = useState<'all' | 'mesas' | 'domicilio' | 'pedidos_ya' | 'rappi' | 'uber' | 'personal'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'chart' | 'summary'>('list');
   const [visibleCount, setVisibleCount] = useState<number>(40);
+
+  // Fecha de "hoy" que se renueva al pasar la medianoche aunque no entren ventas nuevas
+  const [todayKey, setTodayKey] = useState(() => new Date(getServerNowMs()).toDateString());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const key = new Date(getServerNowMs()).toDateString();
+      setTodayKey(prev => (prev === key ? prev : key));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Reset de paginación al cambiar cualquier filtro
   useEffect(() => {
@@ -202,20 +213,11 @@ export function SalesView({
     return Array.from(list.entries()).map(([id, name]) => ({ id, name }));
   }, [branchWorkers, branchOrders]);
 
-  const filteredOrders = useMemo(() => {
+  // Ventas de la sucursal dentro del rango de fechas elegido (base común para totales y tarjetas por tipo)
+  const dateFilteredOrders = useMemo(() => {
     let filtered = branchOrders;
 
-    if (selectedSeller !== 'all') {
-      const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
-      const selName = selectedSellerObj?.name?.trim().toLowerCase();
-      filtered = filtered.filter(o => {
-        if (o.sellerId === selectedSeller) return true;
-        if (selName && o.sellerName && o.sellerName.trim().toLowerCase() === selName) return true;
-        return false;
-      });
-    }
-
-    const now = new Date();
+    const now = new Date(getServerNowMs());
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     startOfDay.setHours(0, 0, 0, 0);
     const startOfDayMs = startOfDay.getTime();
@@ -231,16 +233,16 @@ export function SalesView({
 
     if (timeRange === 'day') {
       filtered = filtered.filter(o => {
-        const oDate = new Date(o.date);
+        const oDate = new Date(getOrderTimeMs(o));
         const isSameCalendarDay = oDate.getFullYear() === now.getFullYear() &&
                                   oDate.getMonth() === now.getMonth() &&
                                   oDate.getDate() === now.getDate();
         return isSameCalendarDay || oDate.getTime() >= startOfDayMs;
       });
     } else if (timeRange === 'week') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfWeekMs);
+      filtered = filtered.filter(o => getOrderTimeMs(o) >= startOfWeekMs);
     } else if (timeRange === 'year') {
-      filtered = filtered.filter(o => new Date(o.date).getTime() >= startOfYearMs);
+      filtered = filtered.filter(o => getOrderTimeMs(o) >= startOfYearMs);
     } else if (timeRange === 'custom') {
       if (customDateRange.start && customDateRange.end) {
         const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
@@ -250,20 +252,36 @@ export function SalesView({
         const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
         filtered = filtered.filter(o => {
-          const t = new Date(o.date).getTime();
+          const t = getOrderTimeMs(o);
           return t >= start.getTime() && t <= end.getTime();
         });
       } else if (customDateRange.start) {
         const [sYear, sMonth, sDay] = customDateRange.start.split('-').map(Number);
         const start = new Date(sYear, sMonth - 1, sDay);
         start.setHours(0, 0, 0, 0);
-        filtered = filtered.filter(o => new Date(o.date).getTime() >= start.getTime());
+        filtered = filtered.filter(o => getOrderTimeMs(o) >= start.getTime());
       } else if (customDateRange.end) {
         const [eYear, eMonth, eDay] = customDateRange.end.split('-').map(Number);
         const end = new Date(eYear, eMonth - 1, eDay);
         end.setHours(23, 59, 59, 999);
-        filtered = filtered.filter(o => new Date(o.date).getTime() <= end.getTime());
+        filtered = filtered.filter(o => getOrderTimeMs(o) <= end.getTime());
       }
+    }
+
+    return filtered;
+  }, [branchOrders, timeRange, customDateRange, todayKey]);
+
+  const filteredOrders = useMemo(() => {
+    let filtered = dateFilteredOrders;
+
+    if (selectedSeller !== 'all') {
+      const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
+      const selName = selectedSellerObj?.name?.trim().toLowerCase();
+      filtered = filtered.filter(o => {
+        if (o.sellerId === selectedSeller) return true;
+        if (selName && o.sellerName && o.sellerName.trim().toLowerCase() === selName) return true;
+        return false;
+      });
     }
 
     if (selectedOrderType === 'pedidos_ya') {
@@ -299,7 +317,7 @@ export function SalesView({
     }
 
     return filtered;
-  }, [branchOrders, selectedSeller, selectedOrderType, timeRange, customDateRange]);
+  }, [dateFilteredOrders, sellers, selectedSeller, selectedOrderType]);
 
   const formatPrice = (price: number) => `USD/ ${price.toFixed(2)}`;
 
@@ -322,7 +340,7 @@ export function SalesView({
     let personalCount = 0, personalTotal = 0;
 
     // Calcular estadísticas globales con base en la lista de esta sucursal
-    const activeNonVoided = branchOrders.filter(o => {
+    const activeNonVoided = dateFilteredOrders.filter(o => {
       if (o.status === 'voided') return false;
       if (selectedSeller !== 'all') {
         const selectedSellerObj = sellers.find(s => s.id === selectedSeller);
@@ -357,7 +375,7 @@ export function SalesView({
     });
 
     return { mesasCount, mesasTotal, domicilioCount, domicilioTotal, pyCount, pyTotal, rappiCount, rappiTotal, uberCount, uberTotal, personalCount, personalTotal };
-  }, [branchOrders, selectedSeller, sellers]);
+  }, [dateFilteredOrders, selectedSeller, sellers]);
 
   const totalRevenue = validOrders.reduce((sum, order) => sum + order.total, 0);
   const totalCost = validOrders.reduce((sum, order) => sum + order.totalCost, 0);
@@ -381,10 +399,10 @@ export function SalesView({
       });
     }
 
-    const sortedOrders = [...validOrders].sort((a, b) => a.date.localeCompare(b.date));
+    const sortedOrders = [...validOrders].sort((a, b) => getOrderTimeMs(a) - getOrderTimeMs(b));
 
     sortedOrders.forEach(order => {
-      const d = new Date(order.date);
+      const d = new Date(getOrderTimeMs(order));
       let timeStr = '';
       
       if (timeRange === 'day') {
@@ -881,7 +899,7 @@ export function SalesView({
                         <div>
                           <h4 className="font-black text-sm uppercase">{order.id.startsWith('staff_') ? `Consumo Personal` : `Pedido #${String(order.orderNumber).padStart(5, '0')}`}</h4>
                           <p className="text-[10px] font-bold opacity-60">
-                            {new Date(order.date).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
+                            {new Date(getOrderTimeMs(order)).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric', hour12: false })}
                           </p>
                         </div>
                       </div>
